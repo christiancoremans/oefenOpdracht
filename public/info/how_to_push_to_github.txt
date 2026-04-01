@@ -1,0 +1,42 @@
+1. Go to your Laravel project folder
+
+In your terminal (CMD, PowerShell, or VS Code terminal):
+
+cd path/to/your/laravel-project
+
+2. Initialize Git
+git init
+
+
+3. Add a proper .gitignore
+
+Laravel already includes one by default. Make sure it contains at least:
+
+/vendor
+/node_modules
+.env
+/public/storage
+/storage/*.key
+
+👉 This prevents sensitive and heavy files from being uploaded.
+
+4. Stage and commit your project
+git add .
+git commit -m "Initial commit - Laravel project"
+5. Create a repository on GitHub
+
+Go to GitHub and:
+
+Click New repository
+Give it a name
+Do NOT initialize with README (important to avoid conflicts)
+
+6. Link your local project to GitHub
+
+Copy the repo URL and run:
+
+git remote add origin https://github.com/your-username/your-repo.git
+
+7. Push your code
+git branch -M main
+git push -u origin main
