@@ -1,0 +1,181 @@
+================================================================================
+CHANGE LOG — 01 — Multi-Project Setup with Dual Headers
+Date: 2026-04-01
+================================================================================
+
+WHAT WAS ASKED
+--------------
+Build a multi-project system on the homepage with:
+  1. A top header showing all project names (project switcher)
+  2. A second header showing the current project + its login/nav
+  3. Login available for every project
+  4. Comments explaining how to recreate each project in an exam
+
+
+WHAT WAS BUILT
+--------------
+
+1. config/projects.php  (NEW)
+   - Central list of all practice projects (slug → name, description, color)
+   - To add a NEW project: add one entry here + create the view files
+   - Routes and the switcher nav update automatically from this config
+
+2. resources/views/layouts/project-shell.blade.php  (NEW)
+   - The shared layout used by ALL project pages and the homepage
+   - Contains BOTH headers:
+       HEADER 1 (top, dark background)
+         • Reads config('projects') and renders a tab for each project
+         • Highlights the current project with a blue background
+         • Has a "← Home" link back to the main page
+       HEADER 2 (white/dark, below)
+         • Shows the current project name on the left
+         • Shows auth links on the right:
+             - Logged IN  → username + "Dashboard" link + "Log out" button
+             - Logged OUT → "Log in" link + "Register" button
+   - Uses @props to declare accepted variables (Blade anonymous components)
+
+3. app/Http/Controllers/ProjectController.php  (NEW)
+   - home($slug)      → public project landing page
+   - dashboard($slug) → protected project dashboard (auth middleware in routes)
+   - Uses abort_if(!$projectConfig, 404) to reject unknown project slugs
+   - Passes project data to the view as an array
+
+4. routes/web.php  (MODIFIED)
+   - Added: use App\Http\Controllers\ProjectController;
+   - Added project route group under prefix('project/{project}'):
+       GET /project/{slug}            → project.home    (public)
+       GET /project/{slug}/dashboard  → project.dashboard (auth required)
+   - The existing home / dashboard / settings routes are unchanged
+
+5. resources/views/projects/todo/home.blade.php  (NEW)
+   resources/views/projects/todo/dashboard.blade.php  (NEW)
+   resources/views/projects/blog/home.blade.php  (NEW)
+   resources/views/projects/blog/dashboard.blade.php  (NEW)
+   - Each uses <x-layouts::project-shell> with project data as props
+   - home pages: show a hero, call-to-action (login/go to dashboard), feature cards
+   - dashboard pages: starter template with commented-out CRUD forms and
+     extensive exam notes explaining @forelse, validation, relationships, etc.
+
+6. resources/views/welcome.blade.php  (REWRITTEN)
+   - Replaced the old inline-CSS Laravel default page
+   - Now uses the project-shell layout (so it has both headers too)
+   - Shows a card grid generated from config('projects') automatically
+   - Includes an "Add a project" guide card
+
+
+WHY EACH DECISION WAS MADE
+---------------------------
+
+Config-driven projects (config/projects.php)
+  → Adding a new project requires only 2 steps: one config entry + view files.
+    No route changes, no controller changes. Good for exam speed.
+
+Single shared auth (Fortify stays as-is)
+  → Building separate auth per project would be repetitive and complex.
+    In an exam you build ONE auth system per app. When you start a new exam
+    project, you start a fresh Laravel install with fresh auth.
+    Here, the single auth lets you switch between practice projects without
+    logging in/out each time — that's a dev convenience, not exam reality.
+
+project-shell layout with @props
+  → Using @props makes the layout self-documenting; you can see exactly
+    what data it needs. Blade anonymous components with @props also give
+    IDE autocompletion support.
+
+Logout as POST form (never a GET link)
+  → Security requirement (CSRF). A GET request to /logout would allow
+    malicious sites to log users out by embedding an <img> tag.
+    Always use a <form method="POST"> with @csrf for destructive actions.
+
+abort_if(!$config, 404) in the controller
+  → Without this, a URL like /project/fakeproject would crash looking for
+    a non-existent view file. The 404 is cleaner and safer.
+
+Dashboard views with commented-out CRUD code
+  → The exam templates show you EXACTLY how the forms look, but commented
+    out so they don't break (no model/controller exists yet). Uncomment as
+    you build the project during the exam.
+
+
+HOW TO ADD A NEW EXAM PROJECT (step by step)
+--------------------------------------------
+
+  Step 1 — Register the project in config/projects.php:
+    'myapp' => [
+        'name'        => 'MyApp',
+        'description' => 'Practice: what this project is about',
+        'color'       => 'rose',
+    ],
+
+  Step 2 — Create the views folder and files:
+    resources/views/projects/myapp/home.blade.php
+    resources/views/projects/myapp/dashboard.blade.php
+
+    Minimal home.blade.php:
+    ----------------------
+    <x-layouts::project-shell
+        :currentProject="$currentProject"
+        :projectName="$projectName"
+        :projectDescription="$projectDescription"
+    >
+        <div class="max-w-4xl mx-auto px-4 py-16">
+            <h2>{{ $projectName }}</h2>
+            @auth
+                <a href="{{ route('project.dashboard', $currentProject) }}">Dashboard</a>
+            @else
+                <a href="{{ route('login') }}">Log in</a>
+            @endauth
+        </div>
+    </x-layouts::project-shell>
+
+    Minimal dashboard.blade.php:
+    ----------------------------
+    <x-layouts::project-shell
+        :currentProject="$currentProject"
+        :projectName="$projectName"
+        :projectDescription="$projectDescription"
+    >
+        <div class="max-w-4xl mx-auto px-4 py-10">
+            <h2>Dashboard — {{ auth()->user()->name }}</h2>
+            {{-- Your app content here --}}
+        </div>
+    </x-layouts::project-shell>
+
+  Step 3 — Done.
+    Visit /project/myapp to see the home page.
+    Visit /project/myapp/dashboard (after login) to see the dashboard.
+    The switcher tab appears automatically.
+
+
+KEY BLADE / LARAVEL CONCEPTS USED
+----------------------------------
+
+  config('projects')               Read an array from config/projects.php
+  config('projects.todo.name')     Read a specific nested value
+  route('project.home', $slug)     Generate a URL for a named route with param
+  @foreach / @endforeach           Loop in Blade (no {{ }} needed for the tag)
+  @forelse / @empty / @endforelse  Loop with an empty-state fallback
+  @auth / @else / @endauth         Show content only if logged in
+  @csrf                            Blade directive → hidden CSRF token input
+  @method('DELETE')                Blade directive → hidden _method input
+  @error('field') / @enderror      Show validation error message
+  old('field')                     Re-fill input value after failed validation
+  abort_if($cond, $code)           Throw an HTTP error if condition is true
+  auth()->user()                   Get the currently logged-in user
+  auth()->user()->name             Get the user's name
+  Route::has('register')           Check if a named route exists
+
+
+FILES CHANGED SUMMARY
+---------------------
+  CREATED   config/projects.php
+  CREATED   resources/views/layouts/project-shell.blade.php
+  CREATED   app/Http/Controllers/ProjectController.php
+  CREATED   resources/views/projects/todo/home.blade.php
+  CREATED   resources/views/projects/todo/dashboard.blade.php
+  CREATED   resources/views/projects/blog/home.blade.php
+  CREATED   resources/views/projects/blog/dashboard.blade.php
+  MODIFIED  routes/web.php
+  REPLACED  resources/views/welcome.blade.php
+
+================================================================================

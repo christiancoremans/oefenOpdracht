@@ -1,0 +1,6 @@
+composer install
+.env example maak .env
+verander n aam database
+php artisan key:generate
+zorg dat laragon runned
+php artisan migrate
