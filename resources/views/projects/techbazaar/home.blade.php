@@ -71,7 +71,7 @@
 
         @auth
             <div class="text-center mb-12">
-                <a href="{{ route('techbazaar.home') }}"
+                <a href="{{ route('techbazaar.products.index') }}"
                    class="bg-amber-500 text-white px-8 py-3 rounded-lg font-semibold hover:bg-amber-600">
                     Browse Products →
                 </a>
