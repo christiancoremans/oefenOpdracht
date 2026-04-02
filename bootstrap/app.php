@@ -11,7 +11,21 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
-        //
+        /*
+        |----------------------------------------------------------------------
+        | EXAM STUDY NOTE — Middleware alias registration (Laravel 11+)
+        |----------------------------------------------------------------------
+        | $middleware->alias([...])
+        |   → Gives your middleware a short name usable in route definitions.
+        |   → Without this alias you'd have to write the full class name:
+        |       Route::middleware(\App\Http\Middleware\EnsureRole::class)
+        |   → With the alias:
+        |       Route::middleware('role:admin')
+        |----------------------------------------------------------------------
+        */
+        $middleware->alias([
+            'role' => \App\Http\Middleware\EnsureRole::class,
+        ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         //

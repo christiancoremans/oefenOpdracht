@@ -1,0 +1,378 @@
+================================================================================
+  TECHBAZAAR — IMPLEMENTATION NOTES & EXAM REASONING
+  File: public/info/02_techbazaar_setup.txt
+  Project: oefenOpdracht (Practice exam scaffold)
+================================================================================
+
+OVERVIEW
+--------
+TechBazaar is a three-role webshop: sellers list tech products, buyers order
+and review them, admins oversee everything. It is registered as the first
+practice project in config/projects.php and lives under the URL prefix
+/project/techbazaar.
+
+All demo accounts use password: "password"
+
+  admin@test.com   — Admin   (full access)
+  seller1@test.com — Seller  (can list products)
+  seller2@test.com — Seller  (second seller for demo)
+  buyer1@test.com  — Buyer   (can cart, order, review)
+  buyer2@test.com  — Buyer   (second buyer for demo)
+
+================================================================================
+FILES CREATED / MODIFIED
+================================================================================
+
+CONFIG
+  config/projects.php
+    — Added 'techbazaar' entry with name, description, and color:'amber'.
+    — This automatically adds TechBazaar to the top navigation switcher bar
+      in project-shell.blade.php (it loops config('projects') dynamically).
+
+MIGRATIONS (database/migrations/)
+  2026_04_01_000001_add_role_to_users_table.php
+    WHY: Adds the role column to the existing users table. Done as a separate
+    migration (not modifying the original) so the base user table stays clean
+    and framework-independent.
+  2026_04_01_000002_create_categories_table.php
+    WHY: Categories group products for filtering. Having a separate table (not
+    a plain text field) means you can rename a category and all products update
+    automatically. Enables the category dropdown filter in the catalog.
+  2026_04_01_000003_create_products_table.php
+    WHY: Core product data. user_id FK ties a product to its seller.
+    category_id FK enables filtering. price as decimal(10,2) avoids floating
+    point rounding errors on money. stock as unsigned int prevents negatives.
+  2026_04_01_000004_create_orders_table.php
+    WHY: An order belongs to a buyer and has a status lifecycle (pending →
+    shipped → completed). Storing total on the order row means one query
+    shows the order summary without summing items each time.
+  2026_04_01_000005_create_order_items_table.php
+    WHY: Line items linking an order to products. price column here is the
+    SNAPSHOT price at purchase time — completely separate from products.price.
+    If the seller changes their price, historical orders are unaffected.
+  2026_04_01_000006_create_reviews_table.php
+    WHY: Stores buyer ratings + comments for products. order_id FK proves the
+    reviewer actually bought the product. unique(['user_id','product_id'])
+    prevents multiple reviews from the same buyer for the same product.
+
+MODELS (app/Models/)
+  User.php
+    WHY: The central actor. Role determines what routes/features are available.
+    Helper methods isAdmin()/isSeller()/isBuyer() keep role checks readable
+    in controllers and views instead of repeating string comparisons.
+    Relationships connect users to their products, orders, and reviews.
+  Category.php
+    WHY: Simple lookup model. hasMany(Product) lets you do $category->products.
+    slug field enables friendly URLs (/products?category=laptops).
+  Product.php
+    WHY: The main catalogue item. Belongs to both a user (seller) and a
+    category. scopeSearch() puts the search query logic inside the model
+    (not the controller) for reusability. Has stock tracking for inventory.
+  Order.php
+    WHY: Represents a buyer's purchase. Status constants (STATUS_PENDING etc.)
+    prevent magic strings being scattered through the codebase. hasMany(OrderItem)
+    gives access to all line items.
+  OrderItem.php
+    WHY: The pivot between an order and a product. Stores quantity AND price
+    snapshot. cast price to decimal:2 for consistent formatting in views.
+  Review.php
+    WHY: Ties a rating+comment to a buyer, a product, AND an order. The order
+    FK is what proves the review is legitimate (buyer actually purchased it).
+
+MIDDLEWARE
+  app/Http/Middleware/EnsureRole.php
+    WHY: Blocks access to role-specific routes at the HTTP layer before
+    any controller code runs. Cleaner than putting role checks inside
+    every controller method. Variadic string ...$roles lets one middleware
+    class handle all combinations: role:buyer, role:seller,admin, etc.
+
+BOOTSTRAP
+  bootstrap/app.php
+    WHY: Registers the 'role' alias so you can write Route::middleware('role:admin')
+    instead of the full class name. Aliases live in bootstrap/app.php in
+    Laravel 11 (no longer a Kernel.php file like Laravel 10 and earlier).
+
+LAYOUT
+  resources/views/layouts/project-shell.blade.php
+    WHY: The shared outer shell used by all project pages. Contains three
+    headers stacked vertically:
+      Header 1 (black) — project switcher, always visible, loops config('projects')
+      Header 2 (white) — project identity + auth links (login/logout/register)
+      Header 3 (amber) — TechBazaar-specific nav: Products, Cart, Orders,
+                          My Listings, Admin. Only renders when
+                          $currentProject === 'techbazaar'. Links are role-aware:
+                          buyers see Cart/Orders, sellers see My Listings,
+                          admins see everything. Active link is highlighted
+                          using request()->routeIs('techbazaar.products.*').
+
+ROUTES
+  routes/techbazaar.php          — NEW: all 23 routes (see below)
+    WHY: Keeps all TechBazaar URLs out of web.php. Each project gets
+    its own file so web.php stays readable. Use require __DIR__.'/file.php'
+    to include it.
+  routes/web.php                 — Modified: added require techbazaar.php
+
+CONTROLLERS (app/Http/Controllers/TechBazaar/)
+  CatalogController.php
+    WHY: Handles everything the public can see — browsing products, reading
+    product detail pages. No auth needed. Owns the search + filter logic
+    so the view stays clean (thin controllers, fat models principle).
+  CartController.php
+    WHY: Session-based cart. No DB table needed for exam scope. Stores
+    items as an array in the session. Needs auth so anonymous users
+    cannot accidentally mix carts.
+  OrderController.php
+    WHY: Converts the cart into a real DB order. Uses DB::transaction()
+    to guarantee stock + order records are either ALL saved or ALL rolled
+    back. Critical for data integrity.
+  ReviewController.php
+    WHY: Guards review submission with 4 checks so only buyers who actually
+    received a product can review it. Prevents fake/spam reviews.
+  Seller/ProductController.php
+    WHY: Full CRUD for a seller's own products. Scoped to the logged-in
+    seller — they cannot see or edit other sellers' products (IDOR guard).
+  Admin/DashboardController.php
+    WHY: Gives the admin a quick stats overview: total users, products,
+    orders, revenue. Useful for monitoring the platform health.
+  Admin/UserController.php
+    WHY: Lets admin change a user's role (promote buyer to seller) or
+    delete accounts. Protects admin from deleting themselves.
+  Admin/ProductController.php
+    WHY: Admin moderation — can see and delete ANY product regardless
+    of who listed it. Essential for platform trust/safety.
+
+VIEWS (resources/views/projects/techbazaar/)
+  home.blade.php
+    WHY: The landing/marketing page. Shows a hero with search, feature
+    highlights, and calls-to-action. First thing a visitor sees. Search
+    form redirects to products/index with the term pre-filled.
+  dashboard.blade.php
+    WHY: Role-aware hub after login. Uses @switch on role to show the right
+    quick-links for each user type. A buyer sees cart/orders, a seller sees
+    their listings, an admin sees admin panels. One view, three experiences.
+  products/index.blade.php
+    WHY: The public product catalog — the core of any webshop. Every visitor
+    can browse here. Has search (text match on name/description) and category
+    filter. Paginated so the DB is not hammered loading thousands of rows.
+    Filter form uses GET so the URL is shareable/bookmarkable.
+  products/show.blade.php
+    WHY: Detailed view of a single product. Shows full description, seller,
+    reviews, and an add-to-cart form. Also shows the review form when the
+    logged-in buyer has a completed order containing this product but has
+    not reviewed it yet (canReview flag set by the controller).
+  products/seller-index.blade.php
+    WHY: A seller's own product list. Only shows products belonging to the
+    logged-in seller. Gives edit/delete actions per row. Completely separate
+    from the public catalog — different controller, different scope.
+  products/create.blade.php
+    WHY: Form to add a new product. Needs enctype="multipart/form-data" for
+    the optional image upload. Uses @error + old() for validation feedback
+    without losing the user's typed data on a failed submit.
+  products/edit.blade.php
+    WHY: Pre-filled update form. Uses old('field', $product->field) — shows
+    the previous failed value (old()) or the DB value as fallback. @method('PUT')
+    because HTML forms cannot send PUT natively.
+  cart/index.blade.php
+    WHY: Shows what is in the session cart. No DB read for cart items —
+    it is already in memory. The "Place Order" button POSTs to orders.store
+    which reads the session and writes to the DB.
+  orders/index.blade.php
+    WHY: Order history for the logged-in buyer. Color-coded status badges
+    using PHP 8 match() expression. Paginated. Links to orders/show.
+  orders/show.blade.php
+    WHY: Order receipt/detail. Displays price snapshot from order_items.price
+    (not the current product price) so historical totals are always correct.
+    Handles deleted products gracefully (product might be removed by seller).
+  admin/dashboard.blade.php
+    WHY: Management overview with 4 stat cards and recent orders. Gives the
+    admin a real-time pulse of the platform without digging through tables.
+  admin/users/index.blade.php
+    WHY: User management table. Each row has an inline role-change form so
+    the admin can promote/demote users without a separate edit page. Skips
+    actions for the admin's own account (prevents accidental self-lockout).
+  admin/products/index.blade.php
+    WHY: Moderator view of all products across all sellers. Admin can delete
+    any listing — no ownership check needed at this level (middleware guards
+    the route). Important for handling illegal/spam listings.
+
+SEEDER
+  database/seeders/DatabaseSeeder.php
+    WHY: Without seed data you cannot test any feature. The seeder creates
+    a realistic minimum dataset: admin to test admin panel, 2 sellers with
+    products, 2 buyers with completed orders so they can leave reviews.
+    All passwords are 'password' for easy testing. Uses Hash::make() — never
+    store plain-text passwords even in dev seeders.
+
+================================================================================
+ARCHITECTURE DECISIONS & EXAM REASONING
+================================================================================
+
+1. ROLE AS ENUM COLUMN — NOT Spatie Permission Package
+   ─────────────────────────────────────────────────────
+   Choice: A single `role` enum('admin','seller','buyer') column on users.
+   Why not Spatie: For exam scope (3 fixed roles, no runtime changes to
+   permissions), a simple enum is far easier to understand and explain than
+   installing a package. In production with many dynamic roles, use Spatie.
+   Trade-off: Adding a 4th role requires a migration. Acceptable for a casus.
+
+2. CUSTOM EnsureRole MIDDLEWARE — NOT Gate/Policy
+   ─────────────────────────────────────────────────
+   The variadic `string ...$roles` signature lets you write:
+     Route::middleware('role:seller,admin')
+   This passes 'seller' and 'admin' as separate arguments to the handler.
+   Policies are preferred for model-level permission checks (e.g., "can
+   this user edit THIS product?"). For route-level access by role, middleware
+   is the idiomatic Laravel pattern.
+
+3. SESSION CART — NOT A DATABASE cart TABLE
+   ─────────────────────────────────────────
+   Cart state lives in the session (key: 'techbazaar_cart'). This is standard
+   for exam-level webshops: no migration needed, no model needed, trivial to
+   clear. The key is namespaced to avoid collisions with other practice projects.
+   Production apps often persist carts to DB so guests can recover them.
+
+4. PRICE SNAPSHOT ON order_items.price
+   ──────────────────────────────────────
+   When an order is placed, the current product price is copied to
+   order_items.price. This means if a seller raises their price tomorrow,
+   historical order totals remain correct. NEVER reference product.price
+   for displaying what a customer paid — always use order_item.price.
+   This is the "price at time of purchase" pattern.
+
+5. DB::transaction() IN OrderController::store()
+   ───────────────────────────────────────────────
+   All writes (Order create, OrderItem creates, stock decrements) happen
+   inside a single DB transaction. If anything fails mid-way (e.g., a
+   product is out of stock after the first item is processed), all changes
+   are rolled back atomically. Without this, you can end up with a partial
+   order and wrong stock numbers.
+
+6. IDOR PREVENTION IN Seller/ProductController
+   ──────────────────────────────────────────────
+   IDOR = Insecure Direct Object Reference (OWASP Top 10 A01).
+   Every seller method does:
+     abort_if($product->user_id !== auth()->id() && !auth()->user()->isAdmin(), 403)
+   Without this, seller1 could edit seller2's products by guessing the ID.
+   Route model binding gets the product by ID, but it does NOT check ownership.
+   You MUST add this ownership check manually.
+
+7. COMPOSITE UNIQUE INDEX ON reviews
+   ─────────────────────────────────────
+   $table->unique(['user_id', 'product_id']) ensures a buyer can only post
+   one review per product, even if they exploit the controller or the DB
+   directly. Database-level constraints are the last line of defense after
+   application-level validation.
+
+8. REVIEW ELIGIBILITY — 4-GUARD CHECK IN ReviewController
+   ──────────────────────────────────────────────────────────
+   Guard 1: The order belongs to the authenticated user.
+   Guard 2: The order status is 'completed' (not just 'pending').
+   Guard 3: The order contains the product being reviewed.
+   Guard 4: The user has not already reviewed this product.
+   Why? To prevent a buyer from: reviewing products they never bought, reviewing
+   before delivery, or leaving multiple reviews.
+
+9. Admin BYPASSES Seller ownership check
+   ─────────────────────────────────────────
+   Admin\ProductController::destroy() does NOT check user_id ownership.
+   Access is protected at the route level by middleware('role:admin'), and
+   admins should be able to moderate/remove any product in the platform.
+
+10. scopeSearch() LOCAL SCOPE ON Product MODEL
+    ─────────────────────────────────────────────
+    Local scopes (prefix: scope + PascalCase) add reusable query constraints.
+    Product::search($term) is equivalent to Product::where('name', 'like', ...).
+    Scopes keep query logic in the model, out of controllers.
+    Called like: $query->search($request->search) — no 'scope' prefix.
+
+================================================================================
+ROUTE STRUCTURE (23 routes)
+================================================================================
+
+  GET  /project/techbazaar                        → techbazaar.home
+       The marketing/landing page. Public.
+
+  GET  /project/techbazaar/products               → techbazaar.products.index
+       The full product catalog with search + filter. Public. Same controller
+       method as home route but dedicated URL so the nav bar can link to it
+       and request()->routeIs() can highlight it correctly.
+
+  GET  /project/techbazaar/products/{product}     → techbazaar.products.show
+       Single product detail page. Public.
+
+  [Auth required]
+  GET  /project/techbazaar/dashboard              → techbazaar.dashboard
+       Role-aware hub. Redirects user to relevant sections based on their role.
+
+  [Auth + role:buyer,admin]
+  GET  /project/techbazaar/cart                   → techbazaar.cart.index
+  POST /project/techbazaar/cart                   → techbazaar.cart.add
+  DEL  /project/techbazaar/cart/{productId}       → techbazaar.cart.remove
+  GET  /project/techbazaar/orders                 → techbazaar.orders.index
+  POST /project/techbazaar/orders                 → techbazaar.orders.store
+  GET  /project/techbazaar/orders/{order}         → techbazaar.orders.show
+  POST /project/techbazaar/reviews                → techbazaar.reviews.store
+
+  [Auth + role:seller,admin]
+  GET  /project/techbazaar/seller/products        → techbazaar.seller.products.index
+  GET  /project/techbazaar/seller/products/create → techbazaar.seller.products.create
+  POST /project/techbazaar/seller/products        → techbazaar.seller.products.store
+  GET  /project/techbazaar/seller/products/{}/edit → techbazaar.seller.products.edit
+  PUT  /project/techbazaar/seller/products/{}     → techbazaar.seller.products.update
+  DEL  /project/techbazaar/seller/products/{}     → techbazaar.seller.products.destroy
+
+  [Auth + role:admin]
+  GET  /project/techbazaar/admin                  → techbazaar.admin.dashboard
+  GET  /project/techbazaar/admin/users            → techbazaar.admin.users.index
+  PUT  /project/techbazaar/admin/users/{user}     → techbazaar.admin.users.update
+  DEL  /project/techbazaar/admin/users/{user}     → techbazaar.admin.users.destroy
+  GET  /project/techbazaar/admin/products         → techbazaar.admin.products.index
+  DEL  /project/techbazaar/admin/products/{}      → techbazaar.admin.products.destroy
+
+================================================================================
+KEY BLADE / LARAVEL CONCEPTS USED
+================================================================================
+
+  @csrf              — Required in every mutating form. Prevents Cross-Site
+                       Request Forgery (CSRF) attacks (OWASP A01).
+
+  @method('DELETE')  — Hidden _method input. Lets HTML forms send DELETE/PUT
+                       requests since browsers only support GET and POST.
+
+  @error / old()     — Display validation errors and repopulate form fields
+                       after a failed validation redirect.
+
+  @selected()        — Blade directive: marks an <option> as selected when the
+                       condition is true. Equivalent to: {{ old('x') == $v ? 'selected' : '' }}
+
+  Route model binding — When a route parameter name matches a model variable
+                        (e.g., {product} → Product $product), Laravel auto-fetches
+                        the model or aborts 404 if not found.
+
+  abort_if(cond, 403) — Short-circuit: if condition is true, immediately return
+                         a 403 Forbidden response. Cleaner than if/abort pattern.
+
+  withQueryString()  — Keeps GET filters (search, category) in pagination links
+                       so filters persist when clicking page 2.
+
+  Storage::url()     — Returns the public URL of a stored file. Requires the
+                       storage symlink: php artisan storage:link
+
+  request()->routeIs('name') — Returns true if the current route matches the
+                       given name. Supports wildcards: routeIs('techbazaar.products.*')
+                       Used in nav bars to conditionally apply 'active' CSS classes.
+
+================================================================================
+QUICK-START AFTER CLONE
+================================================================================
+
+  1. cp .env.example .env && php artisan key:generate
+  2. Configure DB_DATABASE, DB_USERNAME, DB_PASSWORD in .env
+  3. php artisan migrate
+  4. php artisan db:seed
+  5. php artisan storage:link       (for product images)
+  6. npm install && npm run build
+  7. php artisan serve              (or use Laragon)
+  8. Visit http://localhost:8000    (or http://oefenOpdracht.test via Laragon)
+
+================================================================================

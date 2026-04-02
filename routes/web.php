@@ -47,3 +47,9 @@ Route::prefix('project/{project}')->name('project.')->group(function () {
 
 require __DIR__.'/settings.php';
 
+// ── TechBazaar practice project ───────────────────────────────────────────
+// EXAM NOTE: In a real exam you put each project's routes in its own file
+// and require it here. Keeps web.php clean and readable.
+require __DIR__.'/techbazaar.php';
+
+

@@ -144,6 +144,82 @@
     </header>
 
     {{-- =================================================================
+         HEADER 3 — PER-PROJECT NAV BAR
+         =================================================================
+         EXAM STUDY NOTE:
+         This third bar only renders when a specific project needs it.
+         Controlled by $currentProject — the same variable passed from
+         every controller's projectData() array.
+
+         Why a separate bar instead of putting links in header 2?
+         → Header 2 is shared auth/identity UI (login, logout, name).
+         → Project navigation (Products, Cart, Orders) lives here so
+           they stay separate and easy to maintain per project.
+
+         Key concepts:
+         • @if($currentProject === 'techbazaar') → only show for that project
+         • request()->routeIs('name') → highlights the active nav link
+         • @auth / role checks inside Blade to show/hide role-specific links
+         ================================================================= --}}
+    @if($currentProject === 'techbazaar')
+    <header class="bg-amber-500 text-white shadow-sm">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex items-center h-11 gap-1">
+
+            {{-- Always visible --}}
+            <a href="{{ route('techbazaar.products.index') }}"
+               class="px-3 py-1 text-sm rounded-md font-medium whitespace-nowrap transition-colors
+                      {{ request()->routeIs('techbazaar.home', 'techbazaar.products.index', 'techbazaar.products.show')
+                           ? 'bg-amber-700 text-white'
+                           : 'hover:bg-amber-600' }}">
+                🛍 Products
+            </a>
+
+            @auth
+                {{-- Buyer + Admin --}}
+                @if(auth()->user()->role === 'buyer' || auth()->user()->role === 'admin')
+                    <a href="{{ route('techbazaar.cart.index') }}"
+                       class="px-3 py-1 text-sm rounded-md font-medium whitespace-nowrap transition-colors
+                              {{ request()->routeIs('techbazaar.cart.*')
+                                   ? 'bg-amber-700 text-white'
+                                   : 'hover:bg-amber-600' }}">
+                        🛒 Cart
+                    </a>
+                    <a href="{{ route('techbazaar.orders.index') }}"
+                       class="px-3 py-1 text-sm rounded-md font-medium whitespace-nowrap transition-colors
+                              {{ request()->routeIs('techbazaar.orders.*')
+                                   ? 'bg-amber-700 text-white'
+                                   : 'hover:bg-amber-600' }}">
+                        📦 My Orders
+                    </a>
+                @endif
+
+                {{-- Seller + Admin --}}
+                @if(auth()->user()->role === 'seller' || auth()->user()->role === 'admin')
+                    <a href="{{ route('techbazaar.seller.products.index') }}"
+                       class="px-3 py-1 text-sm rounded-md font-medium whitespace-nowrap transition-colors
+                              {{ request()->routeIs('techbazaar.seller.*')
+                                   ? 'bg-amber-700 text-white'
+                                   : 'hover:bg-amber-600' }}">
+                        📝 My Listings
+                    </a>
+                @endif
+
+                {{-- Admin only --}}
+                @if(auth()->user()->role === 'admin')
+                    <a href="{{ route('techbazaar.admin.dashboard') }}"
+                       class="px-3 py-1 text-sm rounded-md font-medium whitespace-nowrap transition-colors
+                              {{ request()->routeIs('techbazaar.admin.*')
+                                   ? 'bg-amber-700 text-white'
+                                   : 'hover:bg-amber-600' }}">
+                        ⚙️ Admin
+                    </a>
+                @endif
+            @endauth
+        </div>
+    </header>
+    @endif
+
+    {{-- =================================================================
          MAIN CONTENT
          Each project's page content goes here via {{ $slot }}
          ================================================================= --}}

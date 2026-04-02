@@ -12,7 +12,7 @@
 <x-layouts::project-shell
     title="Welcome"
     :currentProject="null"
-    projectName="{{ config('app.name') }}"
+    :projectName="config('app.name')"
     projectDescription="Choose a practice project below"
 >
     <div class="max-w-5xl mx-auto px-4 py-16">

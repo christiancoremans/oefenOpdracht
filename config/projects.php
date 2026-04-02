@@ -36,4 +36,10 @@ return [
         'description' => 'Practice: build a blog with posts and comments',
         'color'       => 'emerald',
     ],
+
+    'techbazaar' => [
+        'name'        => 'TechBazaar',
+        'description' => 'Webshop: sellers list tech products, buyers order & review them',
+        'color'       => 'amber',
+    ],
 ];
