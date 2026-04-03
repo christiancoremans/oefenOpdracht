@@ -219,6 +219,55 @@
     </header>
     @endif
 
+    @if($currentProject === 'devtalk')
+    <header class="bg-violet-600 text-white shadow-sm">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex items-center h-11 gap-1">
+
+            <a href="{{ route('devtalk.home') }}"
+               class="px-3 py-1 text-sm rounded-md font-medium whitespace-nowrap transition-colors
+                      {{ request()->routeIs('devtalk.home', 'devtalk.threads.*')
+                           ? 'bg-violet-800 text-white'
+                           : 'hover:bg-violet-700' }}">
+                💬 Threads
+            </a>
+
+            @auth
+                <a href="{{ route('devtalk.threads.create') }}"
+                   class="px-3 py-1 text-sm rounded-md font-medium whitespace-nowrap transition-colors hover:bg-violet-700">
+                    ✏️ New Thread
+                </a>
+
+                @if(auth()->user()->isDtModerator() || auth()->user()->isDtAdmin())
+                    <a href="{{ route('devtalk.moderator.reports.index') }}"
+                       class="px-3 py-1 text-sm rounded-md font-medium whitespace-nowrap transition-colors
+                              {{ request()->routeIs('devtalk.moderator.*')
+                                   ? 'bg-violet-800 text-white'
+                                   : 'hover:bg-violet-700' }}">
+                        🚩 Reports
+                    </a>
+                @endif
+
+                @if(auth()->user()->isDtAdmin())
+                    <a href="{{ route('devtalk.admin.dashboard') }}"
+                       class="px-3 py-1 text-sm rounded-md font-medium whitespace-nowrap transition-colors
+                              {{ request()->routeIs('devtalk.admin.*')
+                                   ? 'bg-violet-800 text-white'
+                                   : 'hover:bg-violet-700' }}">
+                        ⚙️ Admin
+                    </a>
+                    <a href="{{ route('devtalk.admin.users.index') }}"
+                       class="px-3 py-1 text-sm rounded-md font-medium whitespace-nowrap transition-colors
+                              {{ request()->routeIs('devtalk.admin.users.*')
+                                   ? 'bg-violet-800 text-white'
+                                   : 'hover:bg-violet-700' }}">
+                        👥 Users
+                    </a>
+                @endif
+            @endauth
+        </div>
+    </header>
+    @endif
+
     {{-- =================================================================
          MAIN CONTENT
          Each project's page content goes here via {{ $slot }}

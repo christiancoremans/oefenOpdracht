@@ -26,6 +26,14 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::view('dashboard', 'dashboard')->name('dashboard');
 });
 
+require __DIR__.'/settings.php';
+
+// ── TechBazaar practice project ───────────────────────────────────────────
+require __DIR__.'/techbazaar.php';
+
+// ── DevTalk practice project ──────────────────────────────────────────────
+require __DIR__.'/devtalk.php';
+
 // ── Practice projects ─────────────────────────────────────────────────────
 //
 // These routes use {project} as a dynamic URL segment.
@@ -33,6 +41,10 @@ Route::middleware(['auth', 'verified'])->group(function () {
 //
 // URL pattern:   /project/{slug}            → project home  (public)
 //                /project/{slug}/dashboard  → project dash  (auth required)
+//
+// IMPORTANT: This group must come AFTER specific project route files
+// (techbazaar.php, devtalk.php) so their explicit routes take priority
+// over the generic {project} wildcard.
 //
 Route::prefix('project/{project}')->name('project.')->group(function () {
 
@@ -44,12 +56,5 @@ Route::prefix('project/{project}')->name('project.')->group(function () {
         Route::get('dashboard', [ProjectController::class, 'dashboard'])->name('dashboard');
     });
 });
-
-require __DIR__.'/settings.php';
-
-// ── TechBazaar practice project ───────────────────────────────────────────
-// EXAM NOTE: In a real exam you put each project's routes in its own file
-// and require it here. Keeps web.php clean and readable.
-require __DIR__.'/techbazaar.php';
 
 

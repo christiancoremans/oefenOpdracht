@@ -31,7 +31,7 @@ use Laravel\Fortify\TwoFactorAuthenticatable;
 |--------------------------------------------------------------------------
 */
 
-#[Fillable(['name', 'email', 'password', 'role'])]
+#[Fillable(['name', 'email', 'password', 'role', 'devtalk_role'])]
 #[Hidden(['password', 'two_factor_secret', 'two_factor_recovery_codes', 'remember_token'])]
 class User extends Authenticatable
 {
@@ -63,13 +63,29 @@ class User extends Authenticatable
             ->implode('');
     }
 
-    // ── Role helpers ────────────────────────────────────────────────────────
+    // ── TechBazaar role helpers ──────────────────────────────────────────────
     public function isAdmin(): bool  { return $this->role === 'admin';  }
     public function isSeller(): bool { return $this->role === 'seller'; }
     public function isBuyer(): bool  { return $this->role === 'buyer';  }
 
-    // ── Relationships ────────────────────────────────────────────────────────
+    // ── DevTalk role helpers ─────────────────────────────────────────────────
+    // EXAM NOTE: Each project has its own role column so they stay independent.
+    // isDtAdmin() checks devtalk_role — not the same as isAdmin() (TechBazaar).
+    public function isDtAdmin(): bool      { return $this->devtalk_role === 'admin';     }
+    public function isDtModerator(): bool  { return $this->devtalk_role === 'moderator'; }
+    public function isDtUser(): bool       { return $this->devtalk_role === 'user';      }
+
+    // ── TechBazaar relationships ─────────────────────────────────────────────
     public function products(): HasMany { return $this->hasMany(Product::class); }
     public function orders(): HasMany   { return $this->hasMany(Order::class);   }
     public function reviews(): HasMany  { return $this->hasMany(Review::class);  }
+
+    // ── DevTalk relationships ────────────────────────────────────────────────
+    // EXAM NOTE: when the FK on the related table is 'user_id' Laravel finds it
+    // automatically. forumPosts uses a different method name to avoid clash with
+    // a hypothetical 'posts' method on a blog project.
+    public function threads(): HasMany    { return $this->hasMany(DevTalk\Thread::class); }
+    public function forumPosts(): HasMany { return $this->hasMany(DevTalk\Post::class);   }
+    public function votes(): HasMany      { return $this->hasMany(DevTalk\Vote::class);   }
+    public function reports(): HasMany    { return $this->hasMany(DevTalk\Report::class, 'reporter_id'); }
 }

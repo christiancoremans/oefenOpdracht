@@ -1,0 +1,191 @@
+╔══════════════════════════════════════════════════════════════════════════════╗
+║                         DevTalk — Setup & Study Guide                       ║
+║                  Laravel 11 · Developer Forum · Exam Casus #2               ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+URL: http://oefenOpdracht.test/project/devtalk
+URL: http://localhost/oefenOpdracht/oefenOpdracht/public/project/devtalk
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+TEST ACCOUNTS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Forum Admin    dtadmin@test.com   password   devtalk_role = admin
+Forum Mod      dtmod@test.com     password   devtalk_role = moderator
+Dev User One   dtuser1@test.com   password   devtalk_role = user
+Dev User Two   dtuser2@test.com   password   devtalk_role = user
+
+NOTE: These are SEPARATE from TechBazaar accounts. The `devtalk_role`
+column is independent of the TechBazaar `role` column. Being a TechBazaar
+admin does NOT give DevTalk admin access, and vice versa.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+FEATURE OVERVIEW
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+ANYONE (guest):
+  • Browse all threads, filter by category, search by keyword
+  • Read thread replies and see vote scores
+
+LOGGED-IN USER (devtalk_role = user):
+  • Create threads  (assign to a category)
+  • Post replies inside threads
+  • Edit / delete your own threads and replies
+  • Upvote (▲) or downvote (▼) any reply
+    - Clicking the same arrow again REMOVES your vote (toggle off)
+    - Clicking the opposite arrow SWITCHES your vote direction
+  • Flag/report a reply for moderation
+
+MODERATOR (devtalk_role = moderator):
+  • All user actions above
+  • Edit / delete ANY thread or reply (moderation)
+  • Lock a thread (no new replies; toggle in thread edit form)
+  • View the reports queue (flagged posts)
+  • Mark reports as resolved (clears the flagged status on the post)
+
+ADMIN (devtalk_role = admin):
+  • All moderator actions above
+  • Admin dashboard: community stats + most active users + popular threads
+  • User management: change any user's devtalk_role, delete user accounts
+    (Cannot change your own role or delete yourself — 403 protection)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+DATABASE TABLES (all prefixed devtalk_ to avoid TechBazaar collision)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+users.devtalk_role       enum('admin','moderator','user') default null
+                         Added to existing users table via migration.
+
+devtalk_categories       id, name, slug (unique), description (nullable)
+devtalk_threads          id, user_id, category_id, title, body, is_locked,
+                         views (uint, default 0), timestamps
+devtalk_posts            id, user_id, thread_id, body, is_flagged (bool),
+                         timestamps
+devtalk_votes            id, user_id, post_id, value (tinyint: 1 or -1)
+                         UNIQUE constraint: (user_id, post_id) — one vote per user per post
+devtalk_reports          id, reporter_id (FK → users), post_id, reason,
+                         resolved_at (nullable timestamp — NULL = open)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+KEY DESIGN DECISIONS (exam knowledge)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+1. TABLE PREFIX
+   TechBazaar already has a `categories` table.
+   DevTalk names its tables `devtalk_categories`, `devtalk_threads`, etc.
+   to avoid SQL collisions from two projects sharing one database.
+
+2. MODEL NAMESPACE
+   TechBazaar has App\Models\Category.
+   DevTalk uses App\Models\DevTalk\Category (separate namespace).
+   In the seeder, both are imported with aliases:
+     use App\Models\Category;
+     use App\Models\DevTalk\Category as DevTalkCategory;
+
+3. ROLE ISOLATION
+   Two separate role systems:
+     users.role         → TechBazaar (admin / seller / buyer)
+     users.devtalk_role → DevTalk    (admin / moderator / user)
+   Middleware:
+     EnsureRole         → alias 'role'
+     EnsureDevTalkRole  → alias 'devtalk_role'
+   Example: middleware('devtalk_role:moderator,admin')
+
+4. VOTE TOGGLE LOGIC
+   Three cases when a user submits a vote:
+   a. No existing vote → INSERT new vote
+   b. Existing vote, same value (click ▲ again) → DELETE (un-vote)
+   c. Existing vote, different value (switch ▲→▼) → UPDATE value
+
+5. REPORT SYSTEM
+   - Submitting a report sets post.is_flagged = true (fast query flag)
+   - Resolving a report sets resolved_at = now() (soft-close)
+   - When the last open report on a post is resolved,
+     is_flagged is reset to false
+
+6. LOCKED THREADS
+   - PostController::store() aborts if thread.is_locked is true
+     UNLESS the user is a moderator or admin
+   - Thread edit form shows a lock checkbox only to mods/admins
+
+7. N+1 QUERY PREVENTION
+   Thread index:  withCount('posts') — adds posts_count without N+1
+   Thread show:   posts paginated separately + Vote lookup via pluck()
+   Admin stats:   withCount('forumPosts'), withCount('posts')
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+FILE MAP
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+MIGRATIONS
+  database/migrations/2026_04_02_000001_add_devtalk_role_to_users_table.php
+  database/migrations/2026_04_02_000002_create_devtalk_categories_table.php
+  database/migrations/2026_04_02_000003_create_devtalk_threads_table.php
+  database/migrations/2026_04_02_000004_create_devtalk_posts_table.php
+  database/migrations/2026_04_02_000005_create_devtalk_votes_table.php
+  database/migrations/2026_04_02_000006_create_devtalk_reports_table.php
+
+MIDDLEWARE
+  app/Http/Middleware/EnsureDevTalkRole.php   (alias: devtalk_role)
+  bootstrap/app.php                           (alias registered here)
+
+MODELS (App\Models\DevTalk\)
+  app/Models/DevTalk/Category.php
+  app/Models/DevTalk/Thread.php   (scopeSearch, incrementViews)
+  app/Models/DevTalk/Post.php     (voteScore method)
+  app/Models/DevTalk/Vote.php
+  app/Models/DevTalk/Report.php   (scopeUnresolved, reporter belongsTo)
+
+CONTROLLERS (App\Http\Controllers\DevTalk\)
+  ThreadController.php            (index, show, create, store, edit, update, destroy)
+  PostController.php              (store, edit, update, destroy)
+  VoteController.php              (store — toggle logic)
+  ReportController.php            (store — create report + flag post)
+  Moderator/ReportController.php  (index, update — resolve report)
+  Admin/DashboardController.php   (index — stats, top users, top threads)
+  Admin/UserController.php        (index, update — role, destroy)
+
+ROUTES
+  routes/devtalk.php              (20 routes)
+  routes/web.php                  (require devtalk.php)
+
+VIEWS (resources/views/projects/devtalk/)
+  home.blade.php                  thread list + search + category sidebar
+  dashboard.blade.php             role-aware hub (@switch devtalk_role)
+  threads/show.blade.php          thread + votes + report form + reply form
+  threads/create.blade.php        new thread form
+  threads/edit.blade.php          edit thread + lock toggle (mods/admins)
+  posts/edit.blade.php            edit single reply
+  moderator/reports.blade.php     open reports queue
+  admin/dashboard.blade.php       4 stat cards + 2 tables
+  admin/users/index.blade.php     user list + inline role change + delete
+
+LAYOUT
+  resources/views/layouts/project-shell.blade.php
+    @if($currentProject === 'devtalk') → violet nav bar
+
+SEEDER
+  database/seeders/DatabaseSeeder.php  (DevTalk section: 4 users, 3 categories,
+                                        3 threads, 5 posts, 8 votes, 1 report)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+QUICK NAVIGATION (log in first)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+/project/devtalk                          Thread index (public)
+/project/devtalk/dashboard                Role hub (auth required)
+/project/devtalk/threads/create           New thread form
+/project/devtalk/threads/{id}             Thread + replies + vote buttons
+
+/project/devtalk/moderator/reports        Reports queue (mod/admin)
+/project/devtalk/admin                    Admin dashboard (admin only)
+/project/devtalk/admin/users              User management (admin only)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+RE-SEEDING
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+php artisan migrate:fresh --seed --force
+
+This drops all tables, re-runs all migrations, and re-seeds everything.
+Both TechBazaar AND DevTalk data will be recreated.

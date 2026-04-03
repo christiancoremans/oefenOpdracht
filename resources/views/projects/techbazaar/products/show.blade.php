@@ -1,4 +1,8 @@
 {{-- resources/views/projects/techbazaar/products/show.blade.php --}}
+@php
+    /* @var \App\Models\Product $product */
+    /* @var bool $canReview */
+@endphp
 <x-layouts::project-shell
     :currentProject="$currentProject"
     :projectName="$projectName"

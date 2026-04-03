@@ -31,10 +31,10 @@ return [
         'color'       => 'indigo',
     ],
 
-    'blog' => [
-        'name'        => 'BlogApp',
-        'description' => 'Practice: build a blog with posts and comments',
-        'color'       => 'emerald',
+    'devtalk' => [
+        'name'        => 'DevTalk',
+        'description' => 'Forum: developers discuss topics, ask questions, and share knowledge',
+        'color'       => 'violet',
     ],
 
     'techbazaar' => [
