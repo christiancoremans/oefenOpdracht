@@ -31,6 +31,12 @@ return [
         'color'       => 'indigo',
     ],
 
+    'eventease' => [
+        'name'        => 'EventEase',
+        'description' => 'Reserveringssysteem: boek tickets voor events, concerten en conferenties',
+        'color'       => 'emerald',
+    ],
+
     'devtalk' => [
         'name'        => 'DevTalk',
         'description' => 'Forum: developers discuss topics, ask questions, and share knowledge',

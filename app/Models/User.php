@@ -31,7 +31,7 @@ use Laravel\Fortify\TwoFactorAuthenticatable;
 |--------------------------------------------------------------------------
 */
 
-#[Fillable(['name', 'email', 'password', 'role', 'devtalk_role'])]
+#[Fillable(['name', 'email', 'password', 'role', 'devtalk_role', 'ee_role'])]
 #[Hidden(['password', 'two_factor_secret', 'two_factor_recovery_codes', 'remember_token'])]
 class User extends Authenticatable
 {
@@ -74,7 +74,12 @@ class User extends Authenticatable
     public function isDtAdmin(): bool      { return $this->devtalk_role === 'admin';     }
     public function isDtModerator(): bool  { return $this->devtalk_role === 'moderator'; }
     public function isDtUser(): bool       { return $this->devtalk_role === 'user';      }
-
+    // ── EventEase role helpers ───────────────────────────────────────────────
+    // EXAM NOTE: ee_role is independent from 'role' (TechBazaar) and 'devtalk_role'.
+    // An organizer here is only an organizer for EventEase — not for other projects.
+    public function isEeAdmin(): bool      { return $this->ee_role === 'admin';     }
+    public function isEeOrganizer(): bool  { return $this->ee_role === 'organizer'; }
+    public function isEeVisitor(): bool    { return $this->ee_role === 'visitor';   }
     // ── TechBazaar relationships ─────────────────────────────────────────────
     public function products(): HasMany { return $this->hasMany(Product::class); }
     public function orders(): HasMany   { return $this->hasMany(Order::class);   }
@@ -88,4 +93,8 @@ class User extends Authenticatable
     public function forumPosts(): HasMany { return $this->hasMany(DevTalk\Post::class);   }
     public function votes(): HasMany      { return $this->hasMany(DevTalk\Vote::class);   }
     public function reports(): HasMany    { return $this->hasMany(DevTalk\Report::class, 'reporter_id'); }
+
+    // ── EventEase relationships ──────────────────────────────────────────────
+    public function organisedEvents(): HasMany { return $this->hasMany(EventEase\Event::class);       }
+    public function reservations(): HasMany    { return $this->hasMany(EventEase\Reservation::class); }
 }

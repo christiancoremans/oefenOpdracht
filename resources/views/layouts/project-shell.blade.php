@@ -268,6 +268,55 @@
     </header>
     @endif
 
+    @if($currentProject === 'eventease')
+    <header class="bg-emerald-600 text-white shadow-sm">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex items-center h-11 gap-1">
+
+            <a href="{{ route('eventease.home') }}"
+               class="px-3 py-1 text-sm rounded-md font-medium whitespace-nowrap transition-colors
+                      {{ request()->routeIs('eventease.home', 'eventease.events.show')
+                           ? 'bg-emerald-800 text-white'
+                           : 'hover:bg-emerald-700' }}">
+                🎫 Events
+            </a>
+
+            @auth
+                <a href="{{ route('eventease.reservations.index') }}"
+                   class="px-3 py-1 text-sm rounded-md font-medium whitespace-nowrap transition-colors
+                          {{ request()->routeIs('eventease.reservations.*')
+                               ? 'bg-emerald-800 text-white'
+                               : 'hover:bg-emerald-700' }}">
+                    🎟 My Tickets
+                </a>
+
+                @if(auth()->user()->isEeOrganizer() || auth()->user()->isEeAdmin())
+                    <a href="{{ route('eventease.organizer.events.index') }}"
+                       class="px-3 py-1 text-sm rounded-md font-medium whitespace-nowrap transition-colors
+                              {{ request()->routeIs('eventease.organizer.*')
+                                   ? 'bg-emerald-800 text-white'
+                                   : 'hover:bg-emerald-700' }}">
+                        📋 My Events
+                    </a>
+                    <a href="{{ route('eventease.organizer.events.create') }}"
+                       class="px-3 py-1 text-sm rounded-md font-medium whitespace-nowrap transition-colors hover:bg-emerald-700">
+                        ✏️ New Event
+                    </a>
+                @endif
+
+                @if(auth()->user()->isEeAdmin())
+                    <a href="{{ route('eventease.admin.users.index') }}"
+                       class="px-3 py-1 text-sm rounded-md font-medium whitespace-nowrap transition-colors
+                              {{ request()->routeIs('eventease.admin.*')
+                                   ? 'bg-emerald-800 text-white'
+                                   : 'hover:bg-emerald-700' }}">
+                        ⚙️ Admin
+                    </a>
+                @endif
+            @endauth
+        </div>
+    </header>
+    @endif
+
     {{-- =================================================================
          MAIN CONTENT
          Each project's page content goes here via {{ $slot }}

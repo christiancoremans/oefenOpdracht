@@ -1,0 +1,215 @@
+================================================================================
+  EventEase — Practice Project Documentation
+  Casus #3: Reserveringssysteem voor events
+  Laravel 13.2 | PHP 8.4 | Tailwind CSS | Vite
+  Built: April 3, 2026
+================================================================================
+
+
+WHAT WAS BUILT
+==============
+EventEase is a complete event reservation system. Visitors browse upcoming
+events, book tickets, cancel and rebook reservations. Organizers manage their
+own events (create, edit, delete). An admin manages all events and assigns
+user roles.
+
+All EventEase code is fully isolated from the two other practice projects
+(TechBazaar / DevTalk) — separate database tables, a dedicated role column,
+its own middleware, and its own route file.
+
+
+URL OVERVIEW
+============
+  Public (anyone):
+    GET /project/eventease/               → Browse upcoming events
+    GET /project/eventease/events/{id}    → Event detail + booking form
+
+  Authenticated visitors:
+    GET  /project/eventease/reservations            → My Tickets
+    POST /project/eventease/reservations            → Book an event
+    PATCH /project/eventease/reservations/{id}      → Cancel / rebook
+
+  Organizers + Admin:
+    GET  /project/eventease/organizer/events          → My Events list
+    GET  /project/eventease/organizer/events/create   → Create form
+    POST /project/eventease/organizer/events          → Store new event
+    GET  /project/eventease/organizer/events/{id}/edit → Edit form
+    PUT  /project/eventease/organizer/events/{id}      → Update event
+    DELETE /project/eventease/organizer/events/{id}    → Delete event
+
+  Admin only:
+    GET   /project/eventease/admin/users          → Manage user roles
+    PATCH /project/eventease/admin/users/{id}     → Change a user's ee_role
+
+  Dashboard:
+    GET /project/eventease/dashboard   → Hub with quick links
+
+
+FILES CREATED
+=============
+  Config:
+    config/projects.php                          (added eventease entry)
+
+  Migrations (run in order):
+    database/migrations/2026_04_03_000001_add_ee_role_to_users_table.php
+    database/migrations/2026_04_03_000002_create_ee_events_table.php
+    database/migrations/2026_04_03_000003_create_ee_reservations_table.php
+
+  Middleware:
+    app/Http/Middleware/EnsureEventEaseRole.php  (alias: ee_role)
+    bootstrap/app.php                            (alias registered here)
+
+  Models:
+    app/Models/EventEase/Event.php
+    app/Models/EventEase/Reservation.php
+    app/Models/User.php                          (ee_role added, helpers, relations)
+
+  Routes:
+    routes/eventease.php
+    routes/web.php                               (require eventease.php added)
+
+  Controllers:
+    app/Http/Controllers/EventEase/EventController.php          (public)
+    app/Http/Controllers/EventEase/ReservationController.php    (auth)
+    app/Http/Controllers/EventEase/OrganizerEventController.php (organizer+admin)
+    app/Http/Controllers/EventEase/Admin/UserController.php     (admin)
+
+  Views (9 files):
+    resources/views/projects/eventease/dashboard.blade.php
+    resources/views/projects/eventease/home.blade.php
+    resources/views/projects/eventease/events/show.blade.php
+    resources/views/projects/eventease/reservations/index.blade.php
+    resources/views/projects/eventease/organizer/events/index.blade.php
+    resources/views/projects/eventease/organizer/events/create.blade.php
+    resources/views/projects/eventease/organizer/events/edit.blade.php
+    resources/views/projects/eventease/admin/users/index.blade.php
+    resources/views/layouts/project-shell.blade.php    (emerald nav block added)
+
+  Seeder:
+    database/seeders/DatabaseSeeder.php          (EventEase section added)
+
+  Test accounts (all password: "password"):
+    eeadmin@test.com     → ee_role: admin
+    eeorg1@test.com      → ee_role: organizer
+    eeorg2@test.com      → ee_role: organizer
+    eevisitor@test.com   → ee_role: visitor
+
+
+DATABASE DESIGN DECISIONS
+==========================
+
+1. WHY decimal(8,2) FOR PRICE — NOT float
+   ----------------------------------------
+   Floating-point types (MySQL FLOAT / DOUBLE) represent numbers in binary.
+   They cannot store some decimal fractions exactly:
+     0.1 + 0.2  →  0.30000000000000004  (binary float problem)
+   decimal(8,2) is a fixed-point type: it stores the number exactly as
+   written. €49.99 stays €49.99 — no rounding errors.
+   This is critical for money. Always use decimal for prices.
+
+2. WHY ee_ TABLE PREFIX
+   ----------------------
+   Three separate projects (techbazaar, devtalk, eventease) share one
+   database. Using prefixes prevents name collisions:
+     ee_events, ee_reservations (EventEase)
+     devtalk_threads, devtalk_posts, devtalk_categories, ... (DevTalk)
+   Without prefixes a generic "events" table could silently conflict with
+   future migrations in other projects.
+
+3. WHY A SEPARATE ee_role COLUMN
+   --------------------------------
+   The 'role' column belongs to TechBazaar (admin / seller / buyer).
+   DevTalk uses 'devtalk_role' (admin / moderator / user).
+   EventEase uses 'ee_role' (admin / organizer / visitor).
+   One column per project keeps all three systems completely independent:
+     → A TechBazaar admin is NOT automatically an EventEase admin.
+     → A DevTalk moderator is NOT automatically an EventEase organizer.
+   This is clean domain isolation — important for exam casus work.
+
+4. WHY unique(['user_id', 'event_id']) ON ee_reservations
+   --------------------------------------------------------
+   A user should only have ONE reservation row per event. Without this
+   constraint, two rapid browser submits could insert two rows before
+   either commits, resulting in double-billing.
+   The composite unique index guarantees this at the database level —
+   server-side checks alone are not enough due to race conditions.
+
+5. WHY CANCEL = UPDATE (NOT DELETE)
+   -----------------------------------
+   When a user cancels, we UPDATE the status to 'cancelled' and keep the
+   row. Benefits:
+     a) Audit trail: you can see that a booking existed and was cancelled.
+     b) Re-booking is simpler: UPDATE the existing row back to 'confirmed'
+        instead of DELETE + re-INSERT. This avoids hitting the unique
+        constraint again (INSERT would need the unique index to pass).
+     c) Created_at timestamp is preserved, which is useful for analytics.
+
+6. WHY .whereNumber('event') ON {event} ROUTES
+   -----------------------------------------------
+   Without this constraint, a URL like:
+     GET /project/eventease/organizer/events/create
+   would try to route-model-bind the string "create" as an Event ID,
+   causing a 404 or ModelNotFoundException before the real route can match.
+   .whereNumber('event') restricts the {event} parameter to digits only.
+   The explicit /events/create route above it then catches "create" correctly.
+   This is the same fix applied to DevTalk's {thread} parameter.
+
+
+ARCHITECTURE OVERVIEW
+=====================
+
+  Pattern: each project is fully self-contained
+  ──────────────────────────────────────────────
+  ┌──────────────────────────────────────────────────┐
+  │ routes/eventease.php          Route definitions  │
+  │   prefix: project/eventease   + name: eventease. │
+  │                                                  │
+  │ Controllers/EventEase/        Business logic      │
+  │   EventController             → public events    │
+  │   ReservationController       → booking          │
+  │   OrganizerEventController    → CRUD for org     │
+  │   Admin/UserController        → role management  │
+  │                                                  │
+  │ Models/EventEase/             Data layer          │
+  │   Event      (ee_events)                         │
+  │   Reservation (ee_reservations)                  │
+  │                                                  │
+  │ Middleware/EnsureEventEaseRole  → 'ee_role' alias│
+  │                                                  │
+  │ Views: projects/eventease/    8 Blade views       │
+  └──────────────────────────────────────────────────┘
+
+  Overbooking prevention (Event model):
+  ──────────────────────────────────────
+  remainingCapacity() = capacity - SUM(confirmed reservations seats)
+  Called in ReservationController@store before creating/restoring a booking.
+  Also called in ReservationController@update (rebook path) to re-verify.
+
+  Scope pattern (Event model):
+  ─────────────────────────────
+  scopeUpcoming() → WHERE date > NOW() ORDER BY date ASC
+  Used by EventController@index for the public events list.
+  Organizers/admins use orderByDesc('date') to see all events incl. past.
+
+  Role middleware chain:
+  ──────────────────────
+  Route::middleware('auth')                    → must be logged in
+  Route::middleware('ee_role:organizer,admin') → must be organizer OR admin
+  Route::middleware('ee_role:admin')           → admin only
+
+
+TEST ACCOUNTS
+=============
+  eeadmin@test.com    / password   → full admin access
+  eeorg1@test.com     / password   → organizer (owns Laravel+Rock events)
+  eeorg2@test.com     / password   → organizer (owns TechFest event)
+  eevisitor@test.com  / password   → regular visitor (has 2 reservations)
+
+
+QUICK START
+===========
+  php artisan migrate:fresh --seed --force
+  npm run build
+  → Visit http://localhost/oefenOpdracht/public/project/eventease
+
+================================================================================

@@ -26,6 +26,7 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->alias([
             'role'         => \App\Http\Middleware\EnsureRole::class,
             'devtalk_role' => \App\Http\Middleware\EnsureDevTalkRole::class,
+            'ee_role'      => \App\Http\Middleware\EnsureEventEaseRole::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

@@ -8,6 +8,8 @@ use App\Models\DevTalk\Post;
 use App\Models\DevTalk\Report;
 use App\Models\DevTalk\Thread;
 use App\Models\DevTalk\Vote;
+use App\Models\EventEase\Event as EeEvent;
+use App\Models\EventEase\Reservation as EeReservation;
 use App\Models\Order;
 use App\Models\OrderItem;
 use App\Models\Product;
@@ -287,5 +289,103 @@ class DatabaseSeeder extends Seeder
         ]);
         // Mark the post as flagged
         $post3->update(['is_flagged' => true]);
+
+        // ══════════════════════════════════════════════════════════════════
+        // ── EventEase seeder data ─────────────────────────────────────────
+        // EXAM NOTE: EventEase users use DIFFERENT emails from TechBazaar and
+        // DevTalk to avoid unique-email violations on migrate:fresh --seed.
+        // ee_role is separate from 'role' (TechBazaar) and 'devtalk_role'.
+        // ══════════════════════════════════════════════════════════════════
+
+        // ── EventEase users ────────────────────────────────────────────────
+        $eeAdmin = User::create([
+            'name'     => 'EE Admin',
+            'email'    => 'eeadmin@test.com',
+            'password' => Hash::make('password'),
+            'role'     => 'buyer',
+            'ee_role'  => 'admin',
+        ]);
+
+        $eeOrg1 = User::create([
+            'name'     => 'Organizer One',
+            'email'    => 'eeorg1@test.com',
+            'password' => Hash::make('password'),
+            'role'     => 'buyer',
+            'ee_role'  => 'organizer',
+        ]);
+
+        $eeOrg2 = User::create([
+            'name'     => 'Organizer Two',
+            'email'    => 'eeorg2@test.com',
+            'password' => Hash::make('password'),
+            'role'     => 'buyer',
+            'ee_role'  => 'organizer',
+        ]);
+
+        $eeVisitor = User::create([
+            'name'     => 'Event Visitor',
+            'email'    => 'eevisitor@test.com',
+            'password' => Hash::make('password'),
+            'role'     => 'buyer',
+            'ee_role'  => 'visitor',
+        ]);
+
+        // ── EventEase events ───────────────────────────────────────────────
+        // EXAM NOTE: All dates are in the future so scopeUpcoming() returns them.
+        // price uses decimal — stored exactly, no floating-point rounding.
+        $event1 = EeEvent::create([
+            'user_id'     => $eeOrg1->id,
+            'title'       => 'Laravel & PHP Summit 2026',
+            'location'    => 'Antwerp, Belgium',
+            'date'        => now()->addMonths(2)->setTime(10, 0),
+            'capacity'    => 200,
+            'price'       => 49.99,
+            'description' => 'A full-day conference covering Laravel 13, PHP 8.4 features, and modern web development practices.',
+        ]);
+
+        $event2 = EeEvent::create([
+            'user_id'     => $eeOrg2->id,
+            'title'       => 'TechFest Brussels 2026',
+            'location'    => 'Brussels Expo, Brussels',
+            'date'        => now()->addMonths(3)->setTime(9, 0),
+            'capacity'    => 500,
+            'price'       => 0,
+            'description' => 'A free open-technology festival: talks, workshops, and networking for developers of all levels.',
+        ]);
+
+        $event3 = EeEvent::create([
+            'user_id'     => $eeOrg1->id,
+            'title'       => 'Rock in the Park 2026',
+            'location'    => 'Ghent, Belgium',
+            'date'        => now()->addMonths(4)->setTime(14, 0),
+            'capacity'    => 1000,
+            'price'       => 35.00,
+            'description' => 'Outdoor rock festival featuring 10+ bands across 3 stages.',
+        ]);
+
+        // ── EventEase reservations ─────────────────────────────────────────
+        // EXAM NOTE: unique(user_id, event_id) — one row per user per event.
+        // Status 'confirmed' = active booking.
+        EeReservation::create([
+            'user_id'  => $eeVisitor->id,
+            'event_id' => $event1->id,
+            'seats'    => 2,
+            'status'   => EeReservation::STATUS_CONFIRMED,
+        ]);
+
+        EeReservation::create([
+            'user_id'  => $eeVisitor->id,
+            'event_id' => $event2->id,
+            'seats'    => 1,
+            'status'   => EeReservation::STATUS_CONFIRMED,
+        ]);
+
+        // Cancelled reservation example — row is kept for audit; status = 'cancelled'
+        EeReservation::create([
+            'user_id'  => $eeAdmin->id,
+            'event_id' => $event3->id,
+            'seats'    => 4,
+            'status'   => EeReservation::STATUS_CANCELLED,
+        ]);
     }
 }

@@ -34,6 +34,9 @@ require __DIR__.'/techbazaar.php';
 // ── DevTalk practice project ──────────────────────────────────────────────
 require __DIR__.'/devtalk.php';
 
+// ── EventEase practice project ────────────────────────────────────────────
+require __DIR__.'/eventease.php';
+
 // ── Practice projects ─────────────────────────────────────────────────────
 //
 // These routes use {project} as a dynamic URL segment.
