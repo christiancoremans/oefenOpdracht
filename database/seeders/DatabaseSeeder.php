@@ -9,6 +9,8 @@ use App\Models\DevTalk\Report;
 use App\Models\DevTalk\Thread;
 use App\Models\DevTalk\Vote;
 use App\Models\EventEase\Event as EeEvent;
+use App\Models\DriveSmart\Lesson as DsLesson;
+use App\Models\DriveSmart\ProgressReport as DsReport;
 use App\Models\EventEase\Reservation as EeReservation;
 use App\Models\Order;
 use App\Models\OrderItem;
@@ -386,6 +388,119 @@ class DatabaseSeeder extends Seeder
             'event_id' => $event3->id,
             'seats'    => 4,
             'status'   => EeReservation::STATUS_CANCELLED,
+        ]);
+
+        // ══════════════════════════════════════════════════════════════════
+        // ── DriveSmart seeder data ────────────────────────────────────────
+        // EXAM NOTE: DriveSmart uses a separate ds_role column (not the generic
+        // `role` column). All DriveSmart users get role='buyer' for TechBazaar
+        // compatibility. Unique emails avoid constraint violations on re-seed.
+        // ══════════════════════════════════════════════════════════════════
+
+        // ── DriveSmart users ───────────────────────────────────────────────
+        $dsAdmin = User::create([
+            'name'     => 'DS Admin',
+            'email'    => 'dsadmin@test.com',
+            'password' => Hash::make('password'),
+            'role'     => 'buyer',
+            'ds_role'  => 'admin',
+        ]);
+
+        $dsInstructor1 = User::create([
+            'name'     => 'Instructor One',
+            'email'    => 'dsinstructor1@test.com',
+            'password' => Hash::make('password'),
+            'role'     => 'buyer',
+            'ds_role'  => 'instructor',
+        ]);
+
+        $dsInstructor2 = User::create([
+            'name'     => 'Instructor Two',
+            'email'    => 'dsinstructor2@test.com',
+            'password' => Hash::make('password'),
+            'role'     => 'buyer',
+            'ds_role'  => 'instructor',
+        ]);
+
+        $dsStudent1 = User::create([
+            'name'     => 'Student One',
+            'email'    => 'dsstudent1@test.com',
+            'password' => Hash::make('password'),
+            'role'     => 'buyer',
+            'ds_role'  => 'student',
+        ]);
+
+        $dsStudent2 = User::create([
+            'name'     => 'Student Two',
+            'email'    => 'dsstudent2@test.com',
+            'password' => Hash::make('password'),
+            'role'     => 'buyer',
+            'ds_role'  => 'student',
+        ]);
+
+        // ── DriveSmart lessons ─────────────────────────────────────────────
+        // EXAM NOTE: ds_lessons has TWO foreign keys to users (instructor_id and
+        // student_id). Both use ->constrained('users') with the explicit table
+        // name — required because ->constrained() alone derives the table from
+        // the column name, which would fail for non-standard FK column names.
+        $lesson1 = DsLesson::create([
+            'instructor_id' => $dsInstructor1->id,
+            'student_id'    => $dsStudent1->id,
+            'scheduled_at'  => now()->addDays(7)->setTime(9, 0),
+            'status'        => DsLesson::STATUS_PLANNED,
+            'notes'         => 'Focus on highway driving.',
+        ]);
+
+        $lesson2 = DsLesson::create([
+            'instructor_id' => $dsInstructor1->id,
+            'student_id'    => $dsStudent1->id,
+            'scheduled_at'  => now()->addDays(10)->setTime(14, 0),
+            'status'        => DsLesson::STATUS_PLANNED,
+            'notes'         => 'Practice parallel parking.',
+        ]);
+
+        $lesson3 = DsLesson::create([
+            'instructor_id' => $dsInstructor2->id,
+            'student_id'    => $dsStudent2->id,
+            'scheduled_at'  => now()->addDays(8)->setTime(10, 0),
+            'status'        => DsLesson::STATUS_PLANNED,
+            'notes'         => null,
+        ]);
+
+        $lesson4 = DsLesson::create([
+            'instructor_id' => $dsInstructor1->id,
+            'student_id'    => $dsStudent2->id,
+            'scheduled_at'  => now()->addDays(14)->setTime(11, 0),
+            'status'        => DsLesson::STATUS_PLANNED,
+            'notes'         => 'Introduction to roundabouts.',
+        ]);
+
+        // Past completed lesson — provides history visible in instructor schedule
+        $lesson5 = DsLesson::create([
+            'instructor_id' => $dsInstructor1->id,
+            'student_id'    => $dsStudent1->id,
+            'scheduled_at'  => now()->subDays(7)->setTime(9, 0),
+            'status'        => DsLesson::STATUS_COMPLETED,
+            'notes'         => 'Completed first city driving session. Very good.',
+        ]);
+
+        // ── DriveSmart progress reports ────────────────────────────────────
+        // EXAM NOTE: Progress reports are snapshots written by the instructor.
+        // Multiple reports can exist per student over time (no unique constraint).
+        DsReport::create([
+            'instructor_id'     => $dsInstructor1->id,
+            'student_id'        => $dsStudent1->id,
+            'lessons_completed' => 5,
+            'skill_level'       => DsReport::SKILL_INTERMEDIATE,
+            'notes'             => 'Good progress. Confident on city roads. Still working on motorway merging.',
+        ]);
+
+        DsReport::create([
+            'instructor_id'     => $dsInstructor2->id,
+            'student_id'        => $dsStudent2->id,
+            'lessons_completed' => 2,
+            'skill_level'       => DsReport::SKILL_BEGINNER,
+            'notes'             => 'Early stage. Focusing on basic vehicle control and road awareness.',
         ]);
     }
 }

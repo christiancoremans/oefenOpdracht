@@ -31,7 +31,7 @@ use Laravel\Fortify\TwoFactorAuthenticatable;
 |--------------------------------------------------------------------------
 */
 
-#[Fillable(['name', 'email', 'password', 'role', 'devtalk_role', 'ee_role'])]
+#[Fillable(['name', 'email', 'password', 'role', 'devtalk_role', 'ee_role', 'ds_role'])]
 #[Hidden(['password', 'two_factor_secret', 'two_factor_recovery_codes', 'remember_token'])]
 class User extends Authenticatable
 {
@@ -80,6 +80,13 @@ class User extends Authenticatable
     public function isEeAdmin(): bool      { return $this->ee_role === 'admin';     }
     public function isEeOrganizer(): bool  { return $this->ee_role === 'organizer'; }
     public function isEeVisitor(): bool    { return $this->ee_role === 'visitor';   }
+
+    // ── DriveSmart role helpers ──────────────────────────────────────────────
+    // EXAM NOTE: ds_role is independent from all other role columns.
+    // A DriveSmart admin does NOT get EventEase or TechBazaar privileges.
+    public function isDsAdmin(): bool       { return $this->ds_role === 'admin';      }
+    public function isDsInstructor(): bool  { return $this->ds_role === 'instructor'; }
+    public function isDsStudent(): bool     { return $this->ds_role === 'student';    }
     // ── TechBazaar relationships ─────────────────────────────────────────────
     public function products(): HasMany { return $this->hasMany(Product::class); }
     public function orders(): HasMany   { return $this->hasMany(Order::class);   }
@@ -97,4 +104,13 @@ class User extends Authenticatable
     // ── EventEase relationships ──────────────────────────────────────────────
     public function organisedEvents(): HasMany { return $this->hasMany(EventEase\Event::class);       }
     public function reservations(): HasMany    { return $this->hasMany(EventEase\Reservation::class); }
+
+    // ── DriveSmart relationships ──────────────────────────────────────────────
+    // EXAM NOTE: Two relationships to Lesson — one as instructor, one as student.
+    // Both point to the same DriveSmart\Lesson model but use different FK columns.
+    // Method names are unique to avoid any collision.
+    public function instructorLessons(): HasMany  { return $this->hasMany(DriveSmart\Lesson::class, 'instructor_id'); }
+    public function studentLessons(): HasMany     { return $this->hasMany(DriveSmart\Lesson::class, 'student_id');    }
+    public function progressReports(): HasMany   { return $this->hasMany(DriveSmart\ProgressReport::class, 'student_id');    }
+    public function writtenReports(): HasMany    { return $this->hasMany(DriveSmart\ProgressReport::class, 'instructor_id'); }
 }

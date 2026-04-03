@@ -1,0 +1,121 @@
+DriveSmart — Rijschool Beheersysteem
+=====================================
+Casus #4 — Laravel 13 oefenproject
+
+BESCHRIJVING
+------------
+DriveSmart is een systeem voor het beheren van rijlessen, studentvoortgang en
+instructeurplanning bij een rijschool. Drie rollen: admin, instructor en student.
+
+URLs
+----
+Home (publiek):     /project/drivesmart
+Dashboard:          /project/drivesmart/dashboard
+
+Student:
+  Mijn lessen:      /project/drivesmart/lessons
+
+Instructor:
+  Rooster:          /project/drivesmart/instructor/lessons
+  Nieuwe les:       /project/drivesmart/instructor/lessons/create
+  Voortgang:        /project/drivesmart/instructor/progress
+  Rapport schrijven: /project/drivesmart/instructor/progress/create
+
+Admin:
+  Dashboard:        /project/drivesmart/admin
+  Gebruikers:       /project/drivesmart/admin/users
+
+TESTACCOUNTS (wachtwoord: password)
+------------------------------------
+  dsadmin@test.com       → ds_role: admin
+  dsinstructor1@test.com → ds_role: instructor
+  dsinstructor2@test.com → ds_role: instructor
+  dsstudent1@test.com    → ds_role: student
+  dsstudent2@test.com    → ds_role: student
+
+DATABASETABELLEN
+-----------------
+ds_role kolom op users:
+  - Aparte kolom naast `role` (TechBazaar) en `devtalk_role`/`ee_role`.
+  - Standaardwaarde: null (niet ingeschreven voor DriveSmart).
+
+ds_lessons:
+  - instructor_id (FK → users.id, CASCADE)
+  - student_id    (FK → users.id, CASCADE)
+  - scheduled_at  (DATETIME)
+  - status        (ENUM: planned / completed / cancelled / sick)
+  - notes         (TEXT, nullable)
+  Waarom twee FK's naar dezelfde tabel: een les heeft altijd een instructeur
+  én een student. Beide zijn gebruikers, dus beide FK's verwijzen naar users.id.
+  Je moet dan `->constrained('users')` expliciet meegeven — `->constrained()`
+  alleen werkt niet voor niet-standaard kolomnamen zoals instructor_id.
+
+ds_progress_reports:
+  - student_id        (FK → users.id, CASCADE)
+  - instructor_id     (FK → users.id, CASCADE)
+  - lessons_completed (UNSIGNED INT, default 0) — door instructor ingevuld
+  - skill_level       (ENUM: beginner / intermediate / advanced)
+  - notes             (TEXT, nullable)
+  Geen unieke constraint op student_id → meerdere rapporten per student in
+  de loop van de tijd.
+
+MIDDLEWARE
+----------
+EnsureDriveSmartRole — alias: 'ds_role'
+  Controleert of auth()->user()->ds_role in de toegestane rollen zit.
+  Stuurt 403 terug als dat niet zo is.
+
+Gebruik in routes:
+  ->middleware('ds_role:instructor,admin')
+  ->middleware('ds_role:admin')
+
+AUTORISATIELOGICA IN CONTROLLERS
+----------------------------------
+Student (LessonController::update):
+  3 checks voordat cancel/sick wordt toegestaan:
+  1. $lesson->student_id === auth()->id()  (eigendomscontrole)
+  2. $lesson->status === 'planned'         (alleen geplande lessen)
+  3. $lesson->scheduled_at > now()         (alleen toekomstige lessen)
+
+Instructor (Instructor\LessonController::update):
+  Check: instructor_id === auth()->id() || admin (alias voor admin bypasses)
+
+ProgressReport (Instructor\ProgressReportController::edit & update):
+  Check: instructor_id === auth()->id() || admin
+
+MODELMETHODEN
+--------------
+Lesson::isModifiable() — geeft true als status=planned EN scheduled_at in de toekomst.
+  Waarom op het model: de businessregel wordt op meerdere plaatsen gebruikt
+  (controller én view). Door het in het model te centraliseren voorkom je
+  duplicatie en blijft de logica op één plek.
+
+Lesson::scopeUpcoming() — filtert planned lessen in de toekomst.
+
+STATUSWAARDEN LES
+------------------
+  planned   — les is ingepland (standaard)
+  completed — les is voltooid door de instructeur
+  cancelled — geannuleerd (door student of instructeur)
+  sick      — student/instructeur was ziek
+
+PRIVACYOVERWEGING VOORTGANGSRAPPORTEN
+---------------------------------------
+Voortgangsrapporten zijn alleen zichtbaar voor de schrijvende instructeur en
+de admin. Studenten kunnen hun eigen rapporten inzien via het student dashboard.
+Een student kan geen rapporten van andere studenten zien — dit wordt afgedwongen
+door de middleware (student heeft geen toegang tot de /instructor/ routes) en
+door de queryfilter op student_id in de studentweergave.
+
+NAAMGEVING / KLEUR
+-------------------
+  Themakleur:   sky (Tailwind CSS)
+  Tabelprefix:  ds_
+  Routeprefix:  drivesmart.*
+  Middleware:   ds_role
+
+OPZETTEN (na git clone of fresh install)
+-----------------------------------------
+  php artisan migrate:fresh --seed --force
+  npm run build
+  Surf naar /project/drivesmart

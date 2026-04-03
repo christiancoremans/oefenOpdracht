@@ -317,6 +317,71 @@
     </header>
     @endif
 
+    @if($currentProject === 'drivesmart')
+    <header class="bg-sky-600 text-white shadow-sm">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex items-center h-11 gap-1">
+
+            <a href="{{ route('drivesmart.home') }}"
+               class="px-3 py-1 text-sm rounded-md font-medium whitespace-nowrap transition-colors
+                      {{ request()->routeIs('drivesmart.home')
+                           ? 'bg-sky-800 text-white'
+                           : 'hover:bg-sky-700' }}">
+                🚗 Home
+            </a>
+
+            @auth
+                @if(auth()->user()->isDsStudent() || auth()->user()->isDsAdmin())
+                    <a href="{{ route('drivesmart.lessons.index') }}"
+                       class="px-3 py-1 text-sm rounded-md font-medium whitespace-nowrap transition-colors
+                              {{ request()->routeIs('drivesmart.lessons.*')
+                                   ? 'bg-sky-800 text-white'
+                                   : 'hover:bg-sky-700' }}">
+                        📅 My Lessons
+                    </a>
+                @endif
+
+                @if(auth()->user()->isDsInstructor() || auth()->user()->isDsAdmin())
+                    <a href="{{ route('drivesmart.instructor.lessons.index') }}"
+                       class="px-3 py-1 text-sm rounded-md font-medium whitespace-nowrap transition-colors
+                              {{ request()->routeIs('drivesmart.instructor.lessons.index')
+                                   ? 'bg-sky-800 text-white'
+                                   : 'hover:bg-sky-700' }}">
+                        📋 Schedule
+                    </a>
+                    <a href="{{ route('drivesmart.instructor.lessons.create') }}"
+                       class="px-3 py-1 text-sm rounded-md font-medium whitespace-nowrap transition-colors hover:bg-sky-700">
+                        ✏️ New Lesson
+                    </a>
+                    <a href="{{ route('drivesmart.instructor.progress.index') }}"
+                       class="px-3 py-1 text-sm rounded-md font-medium whitespace-nowrap transition-colors
+                              {{ request()->routeIs('drivesmart.instructor.progress.*')
+                                   ? 'bg-sky-800 text-white'
+                                   : 'hover:bg-sky-700' }}">
+                        📊 Progress
+                    </a>
+                @endif
+
+                @if(auth()->user()->isDsAdmin())
+                    <a href="{{ route('drivesmart.admin.dashboard') }}"
+                       class="px-3 py-1 text-sm rounded-md font-medium whitespace-nowrap transition-colors
+                              {{ request()->routeIs('drivesmart.admin.dashboard')
+                                   ? 'bg-sky-800 text-white'
+                                   : 'hover:bg-sky-700' }}">
+                        ⚙️ Admin
+                    </a>
+                    <a href="{{ route('drivesmart.admin.users.index') }}"
+                       class="px-3 py-1 text-sm rounded-md font-medium whitespace-nowrap transition-colors
+                              {{ request()->routeIs('drivesmart.admin.users.*')
+                                   ? 'bg-sky-800 text-white'
+                                   : 'hover:bg-sky-700' }}">
+                        👥 Users
+                    </a>
+                @endif
+            @endauth
+        </div>
+    </header>
+    @endif
+
     {{-- =================================================================
          MAIN CONTENT
          Each project's page content goes here via {{ $slot }}

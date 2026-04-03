@@ -37,6 +37,12 @@ return [
         'color'       => 'emerald',
     ],
 
+    'drivesmart' => [
+        'name'        => 'DriveSmart',
+        'description' => 'Rijschoolbeheer: plan rijlessen, volg voortgang en beheer instructeurs',
+        'color'       => 'sky',
+    ],
+
     'devtalk' => [
         'name'        => 'DevTalk',
         'description' => 'Forum: developers discuss topics, ask questions, and share knowledge',
