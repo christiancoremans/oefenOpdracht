@@ -1,0 +1,666 @@
+CRUD Systeem Bouwen in Laravel — Stap voor Stap
+================================================
+Voorbeeld: TechBazaar (casus #1)
+
+CRUD staat voor Create, Read, Update, Delete.
+Het is de basis van vrijwel elk webproject.
+
+Dit project bouwen betekent de volgende lagen aanmaken, in volgorde:
+  1. Database → migration
+  2. PHP klassen → models
+  3. Toegangsbeheer → middleware
+  4. Routing → route-bestand
+  5. Logica → controllers
+  6. Weergave → views (Blade)
+  7. Testdata → seeder
+
+Elk onderdeel hieronder wordt uitgelegd: WAT het is, WAAROM je het nodig
+hebt, en WELk bestand je aanmaakt — zodat jij het opnieuw kunt maken.
+
+════════════════════════════════════════════════════════════════
+HOE LARAVEL EEN REQUEST VERWERKT (de rode draad)
+════════════════════════════════════════════════════════════════
+
+  Browser → routes/techbazaar.php
+           ↓ Route matcht en roept controller-methode aan
+           ↓ Controller haalt data op via Models (Eloquent)
+           ↓ Controller geeft data door aan een View
+           ↓ View rendert HTML
+  Browser ← HTML-pagina
+
+Elke CRUD-actie volgt dit pad. De middleware zit ertussen om
+onbevoegde toegang te blokkeren vóórdat de controller wordt bereikt.
+
+════════════════════════════════════════════════════════════════
+STAP 1 — DATABASE: MIGRATIONS
+════════════════════════════════════════════════════════════════
+
+WAT IS EEN MIGRATION?
+Een migration is een PHP-bestand dat beschrijft hoe een databasetabel
+eruitziet. Je schrijft PHP, Laravel voert de SQL uit.
+
+WAAROM?
+  - Iedereen in het team heeft dezelfde tabelstructuur.
+  - Je kunt `php artisan migrate:fresh` draaien om van nul te beginnen.
+  - Elke stap is terug te draaien via `php artisan migrate:rollback`.
+
+VOOR TECHBAZAAR — welke migrations zijn er?
+Kijk in: database/migrations/
+
+  2026_04_01_000001_add_role_to_users_table.php
+    → Voegt een `role`-kolom toe aan de bestaande users-tabel.
+    → Gebruik: Schema::table() (niet Schema::create()!) voor ALTER TABLE.
+
+  2026_04_01_000002_create_categories_table.php
+    → Maakt de `categories`-tabel aan. Bevat: id, name, slug (unique).
+
+  2026_04_01_000003_create_products_table.php
+    → Maakt de `products`-tabel aan.
+    → FK user_id → users.id  (welke seller)
+    → FK category_id → categories.id
+    → Kolommen: name, description, price (decimal!), stock, image.
+
+  2026_04_01_000004_create_orders_table.php
+    → Maakt de `orders`-tabel aan.
+    → FK user_id → users.id (welke koper)
+    → status als enum: pending / shipped / completed / cancelled.
+
+  2026_04_01_000005_create_order_items_table.php
+    → Koppeltabel tussen orders en products (many-to-many met extra data).
+    → FK order_id + FK product_id
+    → price kolom = SNAPSHOT van de prijs op het moment van kopen!
+
+  2026_04_01_000006_create_reviews_table.php
+    → Verbindt user + product + order.
+    → Composite unique op (user_id, product_id) = max 1 review per product.
+
+HOE MAAK JE EEN MIGRATION?
+  php artisan make:migration create_products_table
+  php artisan make:migration add_role_to_users_table
+
+De bestandsnaam bepaalt de volgorde (timestamp prefix).
+Tabellen die afhankelijk zijn van andere tabellen moeten LATER komen.
+  → categories voor products (products heeft FK naar categories)
+
+MIGRATIONS UITVOEREN:
+  php artisan migrate              ← voert nieuwe uit
+  php artisan migrate:fresh        ← alles droppen en opnieuw
+  php artisan migrate:fresh --seed ← opnieuw + seeder draaien
+
+ONTHOUD:
+  - decimal() voor geld, NOOIT float (float is afrondingsonnauwkeurig).
+  - ->constrained() bij foreignId() zet automatisch de FK.
+  - ->cascadeOnDelete() = als de parent verwijderd wordt, gaan de children mee.
+  - Altijd een down()-methode schrijven (voor rollback).
+
+════════════════════════════════════════════════════════════════
+STAP 2 — PHP KLASSEN: MODELS
+════════════════════════════════════════════════════════════════
+
+WAT IS EEN MODEL?
+Een model is een PHP-klasse die één tabel in de database vertegenwoordigt.
+Via het model praat je met de tabel zonder SQL te schrijven.
+Laravel noemt dit "Eloquent ORM".
+
+WAAROM?
+  - $product = Product::find(1)  →  SELECT * FROM products WHERE id = 1
+  - Product::create([...])       →  INSERT INTO products ...
+  - $product->update([...])      →  UPDATE products SET ...
+  - $product->delete()           →  DELETE FROM products WHERE id = ...
+  - $product->category           →  SELECT * FROM categories WHERE id = ?
+
+VOOR TECHBAZAAR — welke models zijn er?
+Kijk in: app/Models/
+
+  User.php
+    → Bestaat al (Laravel standaard).
+    → Aangevuld met: role-kolom in $fillable, helper-methodes
+      isAdmin() / isSeller() / isBuyer(), en relationships
+      orders(), products(), reviews().
+
+  Category.php
+    → $fillable: ['name', 'slug']
+    → Relationship: hasMany(Product::class)
+
+  Product.php
+    → $fillable: user_id, category_id, name, description, price, stock, image
+    → $casts: price → decimal:2 (nooit float!)
+    → Relationships: belongsTo(User), belongsTo(Category), hasMany(Review)
+    → Local scope scopeSearch() voor zoekfunctie
+
+  Order.php
+    → Status-constanten als class constants: STATUS_PENDING etc.
+    → $fillable: user_id, status, total
+    → Relationships: belongsTo(User), hasMany(OrderItem)
+
+  OrderItem.php
+    → $fillable: order_id, product_id, quantity, price
+    → Relationships: belongsTo(Order), belongsTo(Product)
+
+  Review.php
+    → $fillable: user_id, product_id, order_id, rating, comment
+    → Relationships: belongsTo(User), belongsTo(Product), belongsTo(Order)
+
+HOE MAAK JE EEN MODEL?
+  php artisan make:model Product
+  php artisan make:model Category
+
+ONTHOUD:
+  $fillable = ['col1', 'col2']
+    → VERPLICHT bij create() en update(). Sluit je dit over, fout.
+    → Zonder $fillable crasht Mass Assignment ("MassAssignmentException").
+
+  Relationships:
+    hasMany()    → "ik heb meerdere van die"  (User hasMany Orders)
+    belongsTo()  → "ik hoor bij die"  (Order belongsTo User)
+    hasOne()     → "ik heb precies één van die"
+
+  Eager loading (N+1 probleem voorkomen):
+    FOUT:  Product::all()  en dan in de view $product->category
+           → voor elk product een extra query!
+    GOED:  Product::with('category')->get()
+           → 1 query voor products + 1 voor categories. Klaar.
+
+════════════════════════════════════════════════════════════════
+STAP 3 — TOEGANGSBEHEER: MIDDLEWARE
+════════════════════════════════════════════════════════════════
+
+WAT IS MIDDLEWARE?
+Code die wordt uitgevoerd VOORDAT de controller de request ontvangt.
+Een soort poorthouder: "mag jij hier naar binnen?"
+
+WAAROM?
+  - Zorgt dat niet-ingelogde gebruikers worden teruggestuurd naar /login.
+  - Zorgt dat kopers geen seller-pagina's zien.
+  - Zorgt dat sellers geen admin-paneel zien.
+
+VOOR TECHBAZAAR:
+Kijk in: app/Http/Middleware/EnsureRole.php (of vergelijkbaar)
+En in: bootstrap/app.php → hier registreer je de middleware.
+
+De middleware leest auth()->user()->role en vergelijkt dit met de
+toegestane rollen die meegegeven worden in de routes.
+
+Gebruik in routes:
+  Route::middleware('role:seller,admin')->group(function () { ... });
+
+HOE MAAK JE MIDDLEWARE?
+  php artisan make:middleware EnsureRole
+
+Registreren in bootstrap/app.php:
+  ->withMiddleware(function (Middleware $middleware) {
+      $middleware->alias([
+          'role' => \App\Http\Middleware\EnsureRole::class,
+      ]);
+  })
+
+ONTHOUD:
+  - abort(403) geeft een "Niet toegestaan" foutmelding terug.
+  - Vergeet de middleware niet te registreren vóór je hem kunt gebruiken.
+  - De ingebouwde 'auth' middleware bestaat al — die hoef je niet te maken.
+
+════════════════════════════════════════════════════════════════
+STAP 4 — ROUTING: ROUTE-BESTAND
+════════════════════════════════════════════════════════════════
+
+WAT IS ROUTING?
+Een route vertelt Laravel: "als de browser dit URL aanvraagt, roep dan
+deze controller-methode aan."
+
+WAAROM een apart bestand per project?
+  - Overzicht: alles voor TechBazaar staat bij elkaar.
+  - Naamconflicten vermijden met andere projecten.
+
+VOOR TECHBAZAAR:
+Kijk in: routes/techbazaar.php
+(Wordt ingeladen via routes/web.php onderaan met require.)
+
+Structuur van het route-bestand:
+  Route::prefix('project/techbazaar')->name('techbazaar.')->group(function () {
+
+    // Openbare routes (geen login nodig)
+    Route::get('/', ...)                    → home/catalogus
+    Route::get('/products/{product}', ...)  → product detail
+
+    // Ingelogd vereist
+    Route::middleware('auth')->group(function () {
+
+        // Koper-routes
+        Route::middleware('role:buyer,admin')->group(function () {
+            // cart, orders, reviews
+        });
+
+        // Seller-routes
+        Route::middleware('role:seller,admin')->group(function () {
+            Route::resource('products', SellerProduct::class);
+        });
+
+        // Admin-routes
+        Route::middleware('role:admin')->group(function () {
+            // admin dashboard, users, products beheer
+        });
+    });
+  });
+
+WAT DOET Route::resource()?
+  In één regel 7 routes aanmaken:
+    GET    /products           → index   (lijst)
+    GET    /products/create    → create  (formulier)
+    POST   /products           → store   (opslaan)
+    GET    /products/{id}      → show    (detail)
+    GET    /products/{id}/edit → edit    (bewerkformulier)
+    PUT    /products/{id}      → update  (bijwerken)
+    DELETE /products/{id}      → destroy (verwijderen)
+
+  Alleen bepaalde methodes:   ->only(['index', 'update'])
+  Bepaalde methodes overslaan: ->except(['show'])
+
+ROUTE-MODEL BINDING:
+  Route: GET /orders/{order}
+  Controller: public function show(Order $order)
+  Laravel haalt automatisch de Order op met dat id.
+  Niet gevonden → automatisch 404.
+
+ONTHOUD:
+  - ->name('techbazaar.') zorgt voor prefix op alle route-namen.
+  - route('techbazaar.products.index') → /project/techbazaar/products
+  - Gebruik .whereNumber('{id}') om route-params te beperken tot getallen.
+
+════════════════════════════════════════════════════════════════
+STAP 5 — LOGICA: CONTROLLERS
+════════════════════════════════════════════════════════════════
+
+WAT IS EEN CONTROLLER?
+Een controller bevat de logica per actie: ophalen, valideren, opslaan,
+doorsturen. Elke methode in een controller corresponds met een route.
+
+WAAROM aparte controllers per rol?
+  - Seller\ProductController → mag alleen eigen producten beheren.
+  - Admin\ProductController  → mag alle producten zien en verwijderen.
+  - CatalogController        → publiek, geen login nodig.
+
+VOOR TECHBAZAAR — welke controllers zijn er?
+Kijk in: app/Http/Controllers/TechBazaar/
+
+  CatalogController.php
+    - index()  → producten ophalen met zoek- en categoriefilter, pagineren
+    - show()   → product detail + controle of koper mag reviewen
+
+  CartController.php
+    - index()  → winkelwagen uit de sessie lezen
+    - add()    → product toevoegen aan sessie-array
+    - remove() → product verwijderen uit sessie-array
+
+  OrderController.php
+    - index()  → eigen bestellingen ophalen (gepagineerd)
+    - store()  → bestelling plaatsen (DB::transaction!)
+    - show()   → detail van één bestelling (eigendomscontrole)
+
+  ReviewController.php
+    - store()  → review opslaan (4 checks: eigenaar, voltooid, product in order, al gereviewd)
+
+  Seller/ProductController.php
+    - index()  → eigen producten (auth()->user()->products())
+    - create() → formulier tonen
+    - store()  → valideren + opslaan (image upload)
+    - edit()   → bewerkformulier tonen (eigendomscontrole!)
+    - update() → valideren + bijwerken (old image verwijderen)
+    - destroy()→ product verwijderen (image verwijderen)
+
+  Admin/DashboardController.php
+    - index()  → statistieken (User::count(), Order::sum('total'), etc.)
+
+  Admin/ProductController.php
+    - index()  → ALLE producten (van alle sellers)
+    - destroy()→ elk product mogen verwijderen
+
+  Admin/UserController.php
+    - index()  → alle gebruikers paginerend
+    - update() → rol wijzigen (niet van jezelf!)
+    - destroy()→ gebruiker verwijderen (niet jezelf!)
+
+HOE MAAK JE EEN CONTROLLER?
+  php artisan make:controller TechBazaar/CatalogController
+  php artisan make:controller TechBazaar/Seller/ProductController
+  (map wordt automatisch aangemaakt)
+
+ONTHOUD — CRUD-methodes (standaard naamgeving):
+  index()   → lijst
+  create()  → formulier tonen voor nieuw item
+  store()   → POST ontvangen, valideren, opslaan
+  show()    → detail van één item
+  edit()    → formulier tonen voor bestaand item
+  update()  → PUT/PATCH ontvangen, valideren, bijwerken
+  destroy() → DELETE, verwijderen
+
+KRITISCHE BEVEILIGINGSREGEL (IDOR):
+  NOOIT: Product::findOrFail($id)   ← seller A kan seller B's product bewerken!
+  ALTIJD: auth()->user()->products()->findOrFail($id)
+  → Dit heet "Insecure Direct Object Reference" — een OWASP Top 10 fout.
+
+VALIDATIE IN STORE/UPDATE:
+  $validated = $request->validate([
+      'name'  => 'required|string|max:255',
+      'price' => 'required|numeric|min:0',
+      'image' => 'nullable|image|max:2048',
+  ]);
+  → Gebruik altijd ->validated() of $request->validate() vóór opslaan.
+  → Gebruik NOOIT $request->all() direct in create() — gevaarlijk!
+
+DB::TRANSACTION VOOR MEERDERE STAPPEN:
+  DB::transaction(function () {
+      // stap 1: order aanmaken
+      // stap 2: order items aanmaken
+      // stap 3: stock verlagen
+  });
+  → Als één stap mislukt, worden alle stappen teruggedraaid.
+  → Zonder transaction kan data half-getekend in de database belanden.
+
+FLASH MESSAGES (terugkoppeling na actie):
+  return redirect()->route('...')->with('success', 'Gelukt!');
+  → In de view: @if(session('success')) ... @endif
+
+IMAGE UPLOAD PATROON:
+  if ($request->hasFile('image')) {
+      $path = $request->file('image')->store('products', 'public');
+  }
+  → Sla het PAD op in de database, niet de bestandsinhoud.
+  → Gebruik Storage::url($pad) in de view voor de publieke URL.
+  → Verwijder het oude bestand vóór het nieuwe wordt opgeslagen.
+  → Eenmalig: php artisan storage:link  (symlink naar public/storage)
+
+════════════════════════════════════════════════════════════════
+STAP 6 — WEERGAVE: VIEWS (BLADE)
+════════════════════════════════════════════════════════════════
+
+WAT IS EEN BLADE-VIEW?
+Een Blade-bestand (.blade.php) is HTML met PHP-logica erin verweven.
+Het is de "voorkant" die de gebruiker ziet.
+
+MAPSTRUCTUUR VOOR TECHBAZAAR:
+Kijk in: resources/views/projects/techbazaar/
+
+  home.blade.php            → openbare startpagina
+  dashboard.blade.php       → ingelogde gebruiker: rol-afhankelijk overzicht
+
+  products/
+    index.blade.php         → publieke catalogus (gefilterd, gepagineerd)
+    show.blade.php          → productdetail + reviews + add-to-cart
+    seller-index.blade.php  → eigen producten van de seller
+    create.blade.php        → formulier: nieuw product
+    edit.blade.php          → formulier: product bewerken
+
+  cart/
+    index.blade.php         → winkelwagen (sessie-data)
+
+  orders/
+    index.blade.php         → lijst van eigen bestellingen
+    show.blade.php          → detail van een bestelling
+
+  admin/
+    dashboard.blade.php     → statistieken, recente orders
+    products/index.blade.php → alle producten van alle sellers
+    users/index.blade.php   → alle gebruikers + rol-wijziging
+
+ELK VIEW-BESTAND BEGINT MET:
+  <x-layouts::project-shell
+      :currentProject="$currentProject"
+      :projectName="$projectName"
+      :projectDescription="$projectDescription"
+  >
+
+Dit is het layout-component dat de navigatiebalk, het menu en de
+algemene paginastructuur inlaadt. Zonder dit geen navigatie.
+
+De data ($currentProject etc.) geeft de controller mee:
+  return view('projects.techbazaar.products.index', array_merge($this->projectData(), [
+      'products' => $products,
+  ]));
+
+BLADE-SYNTAX DIE JE NODIG HEBT:
+
+  Formulier aanmaken:
+    <form method="POST" action="{{ route('...') }}">
+      @csrf          ← VERPLICHT, anders 419-fout (CSRF-beveiliging)
+      ...
+    </form>
+
+  Update-formulier (PUT):
+    <form method="POST" ...>
+      @csrf
+      @method('PUT')  ← HTML kent geen PUT, Laravel leest _method-veld
+      ...
+    </form>
+
+  Delete-formulier:
+    <form method="POST" ...>
+      @csrf
+      @method('DELETE')
+      <button>Verwijder</button>
+    </form>
+
+  Bestaande waarde terugzetten na validatiefout:
+    value="{{ old('name') }}"                ← create: lege pagina normaal
+    value="{{ old('name', $product->name) }}" ← edit: huidig als fallback
+
+  Dropdown met pre-selectie:
+    <option @selected(old('category_id') == $cat->id)>
+
+  Foutmeldingen per veld:
+    @error('name') <p>{{ $message }}</p> @enderror
+
+  Flash-berichten tonen:
+    @if(session('success')) ... @endif
+
+  Bestandsupload-formulier:
+    <form enctype="multipart/form-data" ...>
+    ← VERPLICHT voor file-uploads. Zonder dit is $request->file() null.
+
+  Paginering:
+    {{ $products->links() }}
+    ← Renders de paginering-knoppen.
+
+  Conditie voor rol:
+    @auth
+        @if(auth()->user()->isBuyer()) ... @endif
+    @endauth
+
+  Voorwaardelijk tonen:
+    @guest  → niet ingelogd
+    @auth   → ingelogd
+
+════════════════════════════════════════════════════════════════
+STAP 7 — TESTDATA: SEEDER
+════════════════════════════════════════════════════════════════
+
+WAT IS EEN SEEDER?
+Een PHP-bestand dat testdata in de database zet via Eloquent.
+Zodat je meteen kunt inloggen en het systeem testen.
+
+VOOR TECHBAZAAR:
+Kijk in: database/seeders/DatabaseSeeder.php
+
+Bevat:
+  - 1 admin-gebruiker (admin@test.com)
+  - 2 sellers (seller1@test.com, seller2@test.com)
+  - 2 buyers (buyer1@test.com, buyer2@test.com)
+  - 2 categorieën
+  - 4 producten
+  - 2 voltooide orders met items
+  - 3 reviews
+
+Wachtwoord voor alle accounts: password
+
+WHY Hash::make()?
+  Wachtwoorden NOOIT als plaintext opslaan. Hash::make('password')
+  slaat een bcrypt-hash op, zoals Laravel dat ook doet bij registratie.
+
+SEEDER DRAAIEN:
+  php artisan db:seed                    ← alleen seeder, geen migrate
+  php artisan migrate:fresh --seed       ← fresh start
+
+════════════════════════════════════════════════════════════════
+STAP 8 — NAV-BALK TOEVOEGEN AAN PROJECT-SHELL
+════════════════════════════════════════════════════════════════
+
+WAT IS DE PROJECT-SHELL?
+Kijk in: resources/views/layouts/project-shell.blade.php
+
+Dit is het gedeelde layout-bestand voor alle projecten. Elke project
+heeft zijn eigen @if($currentProject === 'techbazaar')-blok daarin.
+
+Je voegt een <header>-blok toe met de navigatie-links voor jouw project.
+Actieve links worden gemarkeerd met request()->routeIs(...).
+
+════════════════════════════════════════════════════════════════
+STAP 9 — REGISTREER HET ROUTE-BESTAND
+════════════════════════════════════════════════════════════════
+
+In routes/web.php staat onderaan:
+  require __DIR__.'/techbazaar.php';
+
+Dit laadt het TechBazaar-routebestand in als onderdeel van het geheel.
+Vergeet je dit, bestaan je routes niet.
+
+════════════════════════════════════════════════════════════════
+STAP 10 — REGISTREER DE CONFIG
+════════════════════════════════════════════════════════════════
+
+In config/projects.php staat een entry per project:
+  'techbazaar' => [
+      'name'        => 'TechBazaar',
+      'description' => '...',
+      'color'       => 'amber',
+  ],
+
+Dit gebruiken de controllers (config('projects.techbazaar.name')) en de
+project-shell layout (om de juiste kleur/naam te tonen).
+
+════════════════════════════════════════════════════════════════
+VOLGORDE VAN AANMAKEN (samenvatting)
+════════════════════════════════════════════════════════════════
+
+  1.  config/projects.php         → entry toevoegen
+  2.  database/migrations/        → tabellen aanmaken (begin met onafhankelijke)
+  3.  app/Models/                 → models per tabel
+  4.  app/Models/User.php         → uitbreiden met rol-helpers en relaties
+  5.  app/Http/Middleware/        → middleware aanmaken
+  6.  bootstrap/app.php           → middleware alias registreren
+  7.  routes/mijnproject.php      → route-bestand aanmaken
+  8.  routes/web.php              → require toevoegen
+  9.  app/Http/Controllers/       → controllers aanmaken per rol/feature
+  10. resources/views/projects/   → blade-views aanmaken
+  11. layouts/project-shell.blade → nav-blok toevoegen
+  12. database/seeders/           → testdata toevoegen
+  13. php artisan migrate:fresh --seed --force
+  14. npm run build
+
+════════════════════════════════════════════════════════════════
+VEELGEMAAKTE FOUTEN
+════════════════════════════════════════════════════════════════
+
+FOUT 1 — 419 Page Expired
+  Oorzaak: @csrf ontbreekt in een POST-formulier.
+  Oplossing: Elk POST/PUT/PATCH/DELETE-formulier MOET @csrf bevatten.
+
+FOUT 2 — MassAssignmentException
+  Oorzaak: Je probeert een kolom in te vullen die niet in $fillable staat.
+  Oplossing: Voeg de kolom toe aan $fillable in het model.
+
+FOUT 3 — "View [x.y.z] not found"
+  Oorzaak: De view-naam in de controller klopt niet met het bestandspad.
+  Voorbeeld: view('projects.techbazaar.home') →
+             resources/views/projects/techbazaar/home.blade.php
+  Punten worden omgezet naar slashes.
+
+FOUT 4 — Bestand uploaden werkt niet ($request->file() is null)
+  Oorzaak: enctype="multipart/form-data" ontbreekt op het formulier-element.
+  Oplossing: Voeg het toe aan het <form>-tag.
+
+FOUT 5 — UPDATE-route niet gevonden (404 of 405)
+  Oorzaak: Het formulier heeft geen @method('PUT') of @method('PATCH').
+  HTML ondersteunt alleen GET en POST — Laravel leest het _method-veld.
+
+FOUT 6 — Afbeelding niet zichtbaar (broken image icon)
+  Oorzaak: php artisan storage:link is nooit gedraaid.
+  Oplossing: Eenmalig uitvoeren. Dit maakt public/storage → storage/app/public.
+
+FOUT 7 — N+1 queries (pagina traag, veel queries in debugger)
+  Oorzaak: Je laadt relaties in een loop zonder eager loading.
+  Oplossing: Product::with('category', 'user')->get()
+             in plaats van Product::get() met $product->category in loop.
+
+FOUT 8 — Route niet gevonden (RouteNotFoundException)
+  Oorzaak: De route-naam klopt niet, of het routebestand is niet ingeladen.
+  Controleer: routes/web.php → require __DIR__.'/techbazaar.php' aanwezig?
+  Controleer: de route-naam in route() klopt met de naam in het routebestand.
+
+FOUT 9 — "Call to a member function on null" (relatie = null)
+  Oorzaak: $product->category is null omdat eager loading vergeten werd,
+           of de FK-waarde ontbreekt.
+  Oplossing: eager load + gebruik $product->category->name ?? '—' als fallback.
+
+FOUT 10 — Seller kan producten van andere seller bewerken/verwijderen (IDOR)
+  Oorzaak: Je gebruikt Product::findOrFail($id) i.p.v. te scopeën op de user.
+  Oplossing: auth()->user()->products()->findOrFail($id)
+  Dit is een beveiligingsfout! (OWASP Top 10 A01 Broken Access Control)
+
+════════════════════════════════════════════════════════════════
+BESTANDEN PER CATEGORIE (TechBazaar volledig overzicht)
+════════════════════════════════════════════════════════════════
+
+Config:
+  config/projects.php                                 ← project-entry
+
+Migrations:
+  database/migrations/2026_04_01_000001_add_role_to_users_table.php
+  database/migrations/2026_04_01_000002_create_categories_table.php
+  database/migrations/2026_04_01_000003_create_products_table.php
+  database/migrations/2026_04_01_000004_create_orders_table.php
+  database/migrations/2026_04_01_000005_create_order_items_table.php
+  database/migrations/2026_04_01_000006_create_reviews_table.php
+
+Models:
+  app/Models/User.php                                 ← uitgebreid
+  app/Models/Category.php
+  app/Models/Product.php
+  app/Models/Order.php
+  app/Models/OrderItem.php
+  app/Models/Review.php
+
+Middleware:
+  app/Http/Middleware/EnsureRole.php
+  bootstrap/app.php                                   ← alias 'role' registreren
+
+Routes:
+  routes/techbazaar.php
+  routes/web.php                                      ← require toevoegen
+
+Controllers:
+  app/Http/Controllers/TechBazaar/CatalogController.php
+  app/Http/Controllers/TechBazaar/CartController.php
+  app/Http/Controllers/TechBazaar/OrderController.php
+  app/Http/Controllers/TechBazaar/ReviewController.php
+  app/Http/Controllers/TechBazaar/Seller/ProductController.php
+  app/Http/Controllers/TechBazaar/Admin/DashboardController.php
+  app/Http/Controllers/TechBazaar/Admin/ProductController.php
+  app/Http/Controllers/TechBazaar/Admin/UserController.php
+
+Views:
+  resources/views/projects/techbazaar/home.blade.php
+  resources/views/projects/techbazaar/dashboard.blade.php
+  resources/views/projects/techbazaar/products/index.blade.php
+  resources/views/projects/techbazaar/products/show.blade.php
+  resources/views/projects/techbazaar/products/seller-index.blade.php
+  resources/views/projects/techbazaar/products/create.blade.php
+  resources/views/projects/techbazaar/products/edit.blade.php
+  resources/views/projects/techbazaar/cart/index.blade.php
+  resources/views/projects/techbazaar/orders/index.blade.php
+  resources/views/projects/techbazaar/orders/show.blade.php
+  resources/views/projects/techbazaar/admin/dashboard.blade.php
+  resources/views/projects/techbazaar/admin/products/index.blade.php
+  resources/views/projects/techbazaar/admin/users/index.blade.php
+  resources/views/layouts/project-shell.blade.php     ← nav-blok toevoegen
+
+Seeder:
+  database/seeders/DatabaseSeeder.php                 ← TechBazaar-sectie
