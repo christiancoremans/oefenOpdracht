@@ -1,0 +1,510 @@
+Admin Dashboard Bouwen in Laravel — Stap voor Stap
+===================================================
+Voorbeeld: TechBazaar Admin Paneel (casus #1)
+
+Een admin dashboard geeft een beheerdersgebruiker toegang tot:
+  - Statistieken (hoeveel users, orders, omzet)
+  - Overzicht van alle data (producten van alle sellers, alle users)
+  - Acties die gewone gebruikers niet mogen doen (rol wijzigen, verwijderen)
+
+════════════════════════════════════════════════════════════════
+WAT EEN ADMIN DASHBOARD ANDERS MAAKT DAN GEWONE CRUD
+════════════════════════════════════════════════════════════════
+
+Gewone CRUD (seller):
+  → Werkt alleen op EIGEN data  ($user->products()->findOrFail($id))
+  → Kan niet bij data van anderen
+
+Admin CRUD:
+  → Werkt op ALLE data  (Product::findOrFail($id))
+  → Geen eigendomscontrole nodig — de middleware beschermt de route
+  → Kan rollen wijzigen, accounts verwijderen, etc.
+
+Dit betekent: admin-controllers zijn EENVOUDIGER dan seller-controllers
+(geen scoping op user_id), maar de middleware-beveiliging is KRITISCH.
+
+════════════════════════════════════════════════════════════════
+DE ONDERDELEN VAN HET TECHBAZAAR ADMIN PANEEL
+════════════════════════════════════════════════════════════════
+
+  1. Routes       → admin-only middleware-groep
+  2. Controllers  → DashboardController, ProductController, UserController
+  3. Views        → dashboard, products/index, users/index
+
+════════════════════════════════════════════════════════════════
+STAP 1 — ROUTES
+════════════════════════════════════════════════════════════════
+
+WAT STAAT ER IN HET ROUTE-BESTAND?
+Kijk in: routes/techbazaar.php
+
+Het admin-gedeelte zit in een geneste middleware-groep:
+
+  Route::middleware('auth')->group(function () {
+
+      Route::middleware('role:admin')
+           ->prefix('admin')
+           ->name('admin.')
+           ->group(function () {
+
+               Route::get('/', [AdminDashboard::class, 'index'])
+                    ->name('dashboard');
+
+               Route::resource('users', AdminUser::class)
+                    ->only(['index', 'update', 'destroy']);
+
+               Route::resource('products', AdminProduct::class)
+                    ->only(['index', 'destroy']);
+           });
+  });
+
+WAAROM DUBBELE MIDDLEWARE (auth + role:admin)?
+  → 'auth'       controleert: is de gebruiker ingelogd?
+  → 'role:admin' controleert: heeft de gebruiker de admin-rol?
+  Beide checks zijn nodig. Een niet-ingelogde gebruiker heeft geen role.
+
+WAAROM ->only(['index', 'destroy']) op admin products?
+  → De admin BEHEERT, maar maakt geen producten aan.
+  → create/store/edit/update zijn er niet — die heeft de seller.
+  → ->only() laat je precies de routes kiezen die je nodig hebt.
+
+WAAROM ->only(['index', 'update', 'destroy']) op admin users?
+  → De admin kan rollen wijzigen (update) en accounts verwijderen (destroy).
+  → Nieuwe users aanmaken via het admin-paneel is niet nodig
+    (dat doen gebruikers zelf via registratie).
+  → show is hier ook niet nodig.
+
+ROUTES DIE AANGEMAAKT WORDEN (automatisch via resource):
+  Voor users:
+    GET    /admin/users           → admin.users.index
+    PATCH  /admin/users/{user}    → admin.users.update
+    DELETE /admin/users/{user}    → admin.users.destroy
+
+  Voor products:
+    GET    /admin/products        → admin.admin.products.index  (let op dubbel prefix)
+    DELETE /admin/products/{product} → admin.admin.products.destroy
+
+  Dashboard:
+    GET    /admin                 → techbazaar.admin.dashboard
+
+HOE GEBRUIK JE DE ROUTES IN VIEWS?
+  route('techbazaar.admin.dashboard')
+  route('techbazaar.admin.users.index')
+  route('techbazaar.admin.users.update', $user)
+  route('techbazaar.admin.users.destroy', $user)
+  route('techbazaar.admin.products.index')
+  route('techbazaar.admin.products.destroy', $product)
+
+════════════════════════════════════════════════════════════════
+STAP 2 — CONTROLLERS AANMAKEN
+════════════════════════════════════════════════════════════════
+
+HOE MAAK JE DE CONTROLLERS AAN?
+  php artisan make:controller TechBazaar/Admin/DashboardController
+  php artisan make:controller TechBazaar/Admin/ProductController
+  php artisan make:controller TechBazaar/Admin/UserController
+
+Dit maakt mappen aan in:
+  app/Http/Controllers/TechBazaar/Admin/
+
+════════════════════════════════════════════════════════════════
+STAP 3 — DASHBOARDCONTROLLER
+════════════════════════════════════════════════════════════════
+
+WAT DOET DEZE CONTROLLER?
+Verzamelt statistieken en stuurt ze naar de view.
+Kijk in: app/Http/Controllers/TechBazaar/Admin/DashboardController.php
+
+WELKE DATA GEEFT HIJ MEE?
+  - totalUsers    → User::count()
+  - totalProducts → Product::count()
+  - totalOrders   → Order::count()
+  - totalRevenue  → Order::where('status', 'completed')->sum('total')
+  - recentOrders  → Order::with('user')->latest()->take(5)->get()
+
+HOE WERKT DE STATISTIEKEN-AANPAK?
+  ::count()
+    → SELECT COUNT(*) — telt rijen, laadt geen data
+    → Gebruik dit, niet User::all()->count() (laadt alles in geheugen!)
+
+  ::sum('kolom')
+    → SELECT SUM(kolom) — de database doet het rekenwerk
+    → Gebruik dit, niet Order::all()->sum('total')
+
+  ->where('status', 'completed')->sum('total')
+    → Alleen omzet van VOLTOOIDE orders tellen
+    → Pending/cancelled orders zijn geen echte omzet
+
+  Order::with('user')->latest()->take(5)->get()
+    → Eager-load de bijbehorende user bij elke order (voor de naam)
+    → ->latest() = ORDER BY created_at DESC
+    → ->take(5) = LIMIT 5
+
+WAAROM GEEN APARTE STATISTIEKEN-KLASSE?
+  Voor een casus-project van deze omvang: niet nodig. De controller-
+  methode is simpel genoeg. Bij een groter project zou je dit in een
+  aparte Service of Repository-klasse zetten.
+
+════════════════════════════════════════════════════════════════
+STAP 4 — ADMIN PRODUCTCONTROLLER
+════════════════════════════════════════════════════════════════
+
+WAT DOET DEZE CONTROLLER?
+Geeft de admin een overzicht van ALLE producten (van alle sellers)
+en de mogelijkheid om elk product te verwijderen.
+Kijk in: app/Http/Controllers/TechBazaar/Admin/ProductController.php
+
+METHODES:
+
+  index()
+    → Product::with(['user', 'category'])->latest()->paginate(20)
+    → Eager-load seller-naam (user) en categorie
+    → Geen filter op user_id → ALLE producten
+
+  destroy(Product $product)
+    → Geen eigendomscontrole nodig (admin mag alles)
+    → Wél: old image verwijderen vóór delete
+      if ($product->image) {
+          Storage::disk('public')->delete($product->image);
+      }
+    → Dan: $product->delete()
+
+VERSCHIL MET SELLER-CONTROLLER:
+  Seller:  auth()->user()->products()->findOrFail($id)  ← scoped
+  Admin:   Product $product (via route-model binding)   ← onbeperkt
+
+HOE WERKT ROUTE-MODEL BINDING HIER?
+  Route: DELETE /admin/products/{product}
+  Controller: public function destroy(Product $product)
+  Laravel haalt de Product zelf op via het id in de URL.
+  Niet gevonden → automatisch 404. Geen findOrFail() nodig.
+
+════════════════════════════════════════════════════════════════
+STAP 5 — ADMIN USERCONTROLLER
+════════════════════════════════════════════════════════════════
+
+WAT DOET DEZE CONTROLLER?
+Geeft de admin een overzicht van alle gebruikers en de mogelijkheid
+om rollen te wijzigen en accounts te verwijderen.
+Kijk in: app/Http/Controllers/TechBazaar/Admin/UserController.php
+
+METHODES:
+
+  index()
+    → User::latest()->paginate(20)
+    → Geen filtering — alle gebruikers tonen
+
+  update(Request $request, User $user)
+    → Rollen wijzigen
+    → Validatie: 'role' => 'required|in:admin,seller,buyer'
+    → Beveiligingscheck: abort_if($user->id === auth()->id(), 403)
+      ← Admin mag zijn eigen rol NIET wijzigen (zou zichzelf kunnen buitensluiten)
+    → $user->update(['role' => $request->role])
+
+  destroy(User $user)
+    → Account verwijderen
+    → Beveiligingscheck: abort_if($user->id === auth()->id(), 403)
+      ← Admin mag zichzelf NIET verwijderen
+    → $user->delete()
+
+WAAROM DE ZELF-CHECKS?
+  Als een admin per ongeluk zijn eigen rol naar 'buyer' wijzigt, is hij
+  buitengesloten uit het admin-paneel. Dat is bijna niet terug te draaien
+  zonder directe databasetoegang. abort_if(403) voorkomt dit.
+
+VALIDATIE VOOR ROL-WIJZIGING:
+  'role' => 'required|in:admin,seller,buyer'
+  → 'in:' controleert of de waarde in de lijst staat.
+  → Zonder dit kan iemand een willekeurige string als rol invoeren.
+
+════════════════════════════════════════════════════════════════
+STAP 6 — VIEWS AANMAKEN
+════════════════════════════════════════════════════════════════
+
+MAPSTRUCTUUR:
+  resources/views/projects/techbazaar/admin/
+    dashboard.blade.php
+    products/
+      index.blade.php
+    users/
+      index.blade.php
+
+Kijk in die bestanden voor de exacte HTML — hier worden de
+PATRONEN uitgelegd zodat je het kunt nabouwen.
+
+════════════════════════════════════════════════════════════════
+VIEW 1 — admin/dashboard.blade.php
+════════════════════════════════════════════════════════════════
+
+WAT STAAT ER IN?
+  1. Statistiekenrijen (stat-cards in een grid)
+  2. Snelkoppelingen naar users/products-beheer
+  3. Tabel met recente orders
+
+STATISTIEKEN-CARDS:
+  <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+
+  Elke card toont één variabele:
+    {{ $totalUsers }}    → aantal gebruikers
+    {{ $totalProducts }} → aantal producten
+    {{ $totalOrders }}   → aantal bestellingen
+    €{{ number_format($totalRevenue, 2) }}  → totale omzet
+
+  number_format($bedrag, 2) formatteert naar 2 decimalen.
+  LET OP: $totalRevenue is een string vanwege decimal-cast. number_format()
+  werkt daar correct mee.
+
+RECENTE ORDERS TABEL:
+  @forelse($recentOrders as $order)
+    Order #{{ $order->id }}
+    {{ $order->user->name }}   ← werkt omdat with('user') is gedaan
+    {{ $order->created_at->diffForHumans() }}  ← "3 minutes ago" formaat
+    €{{ number_format($order->total, 2) }}
+    Status-badge via @php $badge = match($order->status) { ... } @endphp
+  @empty
+    Geen orders.
+  @endforelse
+
+MATCH-EXPRESSIE VOOR STATUS-BADGE:
+  @php
+      $badge = match($order->status) {
+          'pending'   => 'bg-yellow-100 text-yellow-800',
+          'shipped'   => 'bg-blue-100 text-blue-800',
+          'completed' => 'bg-green-100 text-green-800',
+          'cancelled' => 'bg-red-100 text-red-800',
+          default     => 'bg-zinc-100 text-zinc-800',
+      };
+  @endphp
+  <span class="{{ $badge }}">{{ ucfirst($order->status) }}</span>
+
+  → match() is PHP 8 — vindt de eerste arm die matcht.
+  → ucfirst() maakt eerste letter hoofdletter: "pending" → "Pending".
+
+════════════════════════════════════════════════════════════════
+VIEW 2 — admin/products/index.blade.php
+════════════════════════════════════════════════════════════════
+
+WAT STAAT ER IN?
+  Tabel met alle producten van alle sellers + delete-knop per rij.
+
+KOLOMMEN:
+  Product (naam, link naar publieke productpagina)
+  Seller  ($product->user->name ?? '—')
+  Categorie ($product->category->name ?? '—')
+  Prijs
+  Stock
+  Actie (delete-formulier)
+
+WAAROM ?? '—'?
+  Als een seller of categorie verwijderd is, is de relatie null.
+  ?? '—' voorkomt een "Trying to get property of null" fout.
+
+DELETE-FORMULIER PER RIJ:
+  <form method="POST" action="{{ route('techbazaar.admin.products.destroy', $product) }}"
+        onsubmit="return confirm('Delete {{ $product->name }}?')">
+    @csrf
+    @method('DELETE')
+    <button type="submit">Delete</button>
+  </form>
+
+  → onsubmit="return confirm(...)" toont een bevestigingspopup.
+  → @csrf is verplicht.
+  → @method('DELETE') zorgt dat Laravel het als DELETE verwerkt.
+
+ADMIN VS SELLER DELETE VERSCHIL:
+  Seller: action="{{ route('techbazaar.seller.products.destroy', $product) }}"
+  Admin:  action="{{ route('techbazaar.admin.products.destroy', $product) }}"
+  → Andere route → andere controller → geen eigendomscontrole bij admin.
+
+════════════════════════════════════════════════════════════════
+VIEW 3 — admin/users/index.blade.php
+════════════════════════════════════════════════════════════════
+
+WAT STAAT ER IN?
+  Tabel met alle gebruikers + inline rol-wijziging + delete-knop.
+
+KOLOMMEN:
+  Naam (met "(you)" markering voor de admin zelf)
+  Email
+  Rol (als gekleurde badge)
+  Acties (rol-wijziging + delete)
+
+ROL-BADGE MET KLEUR:
+  @php
+      $roleBadge = match($user->role) {
+          'admin'  => 'bg-purple-100 text-purple-800',
+          'seller' => 'bg-amber-100 text-amber-800',
+          default  => 'bg-zinc-100 text-zinc-700',  // buyer
+      };
+  @endphp
+  <span class="{{ $roleBadge }}">{{ ucfirst($user->role) }}</span>
+
+INLINE ROL-WIJZIGING — ELK GEBRUIKER HEEFT ZIJN EIGEN FORMULIER:
+  <form method="POST" action="{{ route('techbazaar.admin.users.update', $user) }}">
+    @csrf
+    @method('PATCH')
+    <select name="role">
+      <option value="buyer"  @selected($user->role === 'buyer')>Buyer</option>
+      <option value="seller" @selected($user->role === 'seller')>Seller</option>
+      <option value="admin"  @selected($user->role === 'admin')>Admin</option>
+    </select>
+    <button type="submit">Save</button>
+  </form>
+
+  → @selected($conditie) is Blade shorthand voor selected="{{ $conditie ? 'selected' : '' }}"
+  → @method('PATCH') omdat de route PATCH verwacht (update via resource).
+  → Elk tabelrij heeft zijn eigen form — geen aparte edit-pagina nodig.
+
+VERBERGEN VAN KNOPPEN VOOR EIGEN ACCOUNT:
+  @if($user->id !== auth()->id())
+    ... rol-formulier en delete-knop ...
+  @endif
+
+  → Dit verbergt de knoppen voor de ingelogde admin in zijn eigen rij.
+  → De controller heeft ook een abort_if-check als extra laag.
+  → Beide lagen ("defense in depth") zijn goed practice.
+
+DELETED FEEDBACK (flash-bericht):
+  @if(session('success'))
+    <div class="bg-green-50 ...">{{ session('success') }}</div>
+  @endif
+
+  → De controller stuurt: ->with('success', 'Rol bijgewerkt voor ...')
+  → De view leest dit uit de sessie en toont het eenmalig.
+
+════════════════════════════════════════════════════════════════
+STAP 7 — MIDDLEWARE CONTROLEREN
+════════════════════════════════════════════════════════════════
+
+De admin-routes zijn beveiligd via:
+  Route::middleware('role:admin')
+
+Dit vereist dat de middleware is aangemaakt en geregistreerd.
+(Zie 07_crud_stap_voor_stap.txt — Stap 3 voor details.)
+
+Als de middleware ontbreekt, zijn admin-routes toegankelijk voor iedereen.
+
+════════════════════════════════════════════════════════════════
+STAP 8 — CONTROLLER-METHODES REGISTREREN IN DE VIEW-DATA
+════════════════════════════════════════════════════════════════
+
+PATROON — projectData() helper:
+Elke controller in TechBazaar heeft een private method:
+
+  private function projectData(): array
+  {
+      return [
+          'currentProject'     => 'techbazaar',
+          'projectName'        => config('projects.techbazaar.name'),
+          'projectDescription' => config('projects.techbazaar.description'),
+      ];
+  }
+
+En in elke return-view gebruik je:
+  return view('...', array_merge($this->projectData(), [
+      'users' => $users,
+  ]));
+
+WAAROM array_merge?
+  → $this->projectData() geeft altijd de 3 layout-variabelen terug.
+  → array_merge voegt je eigen data erbij.
+  → De view-layout heeft currentProject nodig voor de juiste nav-balk.
+
+════════════════════════════════════════════════════════════════
+VOLGORDE VAN AANMAKEN (admin dashboard samenvatting)
+════════════════════════════════════════════════════════════════
+
+  1. Routes toevoegen aan routes/techbazaar.php
+     → middleware('role:admin')->prefix('admin')->name('admin.') groep
+     → dashboard route
+     → resource('users', ...) met ->only([...])
+     → resource('products', ...) met ->only([...])
+
+  2. Controllers aanmaken
+     php artisan make:controller TechBazaar/Admin/DashboardController
+     php artisan make:controller TechBazaar/Admin/ProductController
+     php artisan make:controller TechBazaar/Admin/UserController
+
+  3. DashboardController::index() schrijven
+     → count(), sum() voor statistieken
+     → with('user')->latest()->take(5) voor recente orders
+
+  4. ProductController::index() en destroy() schrijven
+     → Geen user_id-scope
+     → Image verwijderen bij destroy
+
+  5. UserController::index(), update() en destroy() schrijven
+     → Validatie op 'role' with in:
+     → abort_if eigen account
+
+  6. Views aanmaken
+     resources/views/projects/techbazaar/admin/dashboard.blade.php
+     resources/views/projects/techbazaar/admin/products/index.blade.php
+     resources/views/projects/techbazaar/admin/users/index.blade.php
+
+  7. Dashboard-link toevoegen aan de nav-balk in project-shell.blade.php
+     → Zichtbaar alleen als auth()->user()->isAdmin()
+
+════════════════════════════════════════════════════════════════
+VEELGEMAAKTE FOUTEN BIJ ADMIN DASHBOARDS
+════════════════════════════════════════════════════════════════
+
+FOUT 1 — Admin-route toegankelijk zonder login
+  Oorzaak: 'role:admin' middleware staat er maar 'auth' ontbreekt.
+  Gevolg: auth()->user() is null → PHP-fout.
+  Oplossing: Altijd 'auth' als buitenste groep, 'role:admin' als binnenste.
+
+FOUT 2 — Admin kan zijn eigen account verwijderen/bewerken
+  Oorzaak: geen abort_if-check in de controller.
+  Oplossing: abort_if($user->id === auth()->id(), 403)
+
+FOUT 3 — Statistieken laden alle rijen in geheugen
+  FOUT:   Order::all()->sum('total')   ← laadt alle records
+  GOED:   Order::sum('total')          ← één SQL-query
+
+FOUT 4 — "Trying to get property of null" bij $product->user->name
+  Oorzaak: user is verwijderd, relatie is null.
+  Oplossing: $product->user->name ?? '—'
+
+FOUT 5 — Recente orders tonen geen gebruikersnaam
+  Oorzaak: with('user') vergeten bij de query.
+  Gevolg: N+1 queries of null-fout.
+  Oplossing: Order::with('user')->latest()->take(5)->get()
+
+FOUT 6 — Rol-wijziging werkt niet (status 405 Method Not Allowed)
+  Oorzaak: @method('PATCH') vergeten in het formulier.
+  HTML-formulieren kennen geen PATCH — Laravel leest het _method-veld.
+
+FOUT 7 — Alle admin-pagina's tonen dezelfde data / navigatie
+  Oorzaak: currentProject niet meegegeven aan de view.
+  Oplossing: altijd array_merge($this->projectData(), [...]) gebruiken.
+
+FOUT 8 — Verwijderd product laat achtergebleven afbeelding na
+  Oorzaak: Storage::delete() vergeten in destroy().
+  Oplossing:
+    if ($product->image) {
+        Storage::disk('public')->delete($product->image);
+    }
+    $product->delete();
+
+════════════════════════════════════════════════════════════════
+BESTANDEN ADMIN DASHBOARD (TechBazaar)
+════════════════════════════════════════════════════════════════
+
+Routes:
+  routes/techbazaar.php
+    → admin-groep onderaan de 'auth'-middleware
+
+Controllers:
+  app/Http/Controllers/TechBazaar/Admin/DashboardController.php
+  app/Http/Controllers/TechBazaar/Admin/ProductController.php
+  app/Http/Controllers/TechBazaar/Admin/UserController.php
+
+Views:
+  resources/views/projects/techbazaar/admin/dashboard.blade.php
+  resources/views/projects/techbazaar/admin/products/index.blade.php
+  resources/views/projects/techbazaar/admin/users/index.blade.php
+
+Nav-balk (uitgebreid):
+  resources/views/layouts/project-shell.blade.php
+    → @if(auth()->user()->isAdmin()) Admin-link tonen @endif
