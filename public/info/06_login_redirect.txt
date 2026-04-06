@@ -1,0 +1,125 @@
+Login Redirect Aanpassen in Laravel + Fortify
+==============================================
+Hoe verander je waar een gebruiker naartoe gaat na het inloggen?
+
+════════════════════════════════════════════════════════
+STAP-VOOR-STAP HANDLEIDING
+════════════════════════════════════════════════════════
+
+STAP 1 — Open het Fortify config-bestand
+-----------------------------------------
+Bestand: config/fortify.php
+
+Je ziet hier de 'home' sleutel:
+
+    'home' => '/dashboard',
+
+Dit is het pad waar Fortify de gebruiker naartoe stuurt na:
+  - Succesvol inloggen
+  - Succesvol registreren
+  - Succesvol wachtwoord resetten
+  - Een al-ingelogde gebruiker die /login probeert te bezoeken
+
+
+STAP 2 — Pas de waarde aan
+----------------------------
+Verander de waarde naar het gewenste pad:
+
+  Van:  'home' => '/dashboard',
+  Naar: 'home' => '/',
+
+Andere voorbeelden:
+  'home' => '/home',
+  'home' => '/overview',
+  'home' => '/project/drivesmart',
+
+
+STAP 3 — Config cache legen (als je die gebruikt)
+--------------------------------------------------
+Als je `php artisan config:cache` hebt gedraaid, moet je de cache legen:
+
+    php artisan config:clear
+
+In een ontwikkelomgeving (zoals Laragon) draai je dit niet standaard,
+dus dan is deze stap niet nodig.
+
+
+STAP 4 — Testen
+----------------
+1. Log uit als je ingelogd bent
+2. Ga naar /login
+3. Log in
+4. Controleer dat je op / terecht komt
+
+
+════════════════════════════════════════════════════════
+VEELVOORKOMENDE PROBLEMEN
+════════════════════════════════════════════════════════
+
+PROBLEEM 1 — Redirect werkt niet, je blijft op /dashboard
+-----------------------------------------------------------
+Oorzaak: De config is gecached.
+Oplossing:
+    php artisan config:clear
+    php artisan cache:clear
+
+PROBLEEM 2 — Je wordt nog steeds doorgestuurd naar /dashboard
+--------------------------------------------------------------
+Oorzaak: Er is een tweede plek die de redirect bepaalt. In oudere
+Laravel-versies was dat RouteServiceProvider.php (bevat een HOME constante).
+Controleer of dit bestand bestaat:
+    app/Providers/RouteServiceProvider.php
+
+Als het bestaat, zoek naar:
+    public const HOME = '/dashboard';
+
+En pas het daar ook aan.
+
+PROBLEEM 3 — Middleware 'auth' stuurt terug naar /login
+--------------------------------------------------------
+Dit is een ander gedrag. De `auth` middleware stuurt niet-ingelogde bezoekers
+door naar /login. Dat heeft niets te maken met de post-login redirect.
+Verwar de twee niet.
+
+PROBLEEM 4 — Na registratie gaat de gebruiker naar de verkeerde plek
+---------------------------------------------------------------------
+De `home` sleutel in fortify.php geldt ook voor na registratie.
+Als je voor login en registratie verschillende redirects wil, moet je
+een custom LoginResponse of RegisterResponse aanmaken. Dat doe je via:
+
+    namespace App\Http\Responses;
+    use Laravel\Fortify\Contracts\LoginResponse as LoginResponseContract;
+    use Illuminate\Http\Request;
+
+    class LoginResponse implements LoginResponseContract
+    {
+        public function toResponse($request)
+        {
+            return redirect('/');
+        }
+    }
+
+En registreer dit in AppServiceProvider of FortifyServiceProvider:
+    $this->app->singleton(LoginResponseContract::class, LoginResponse::class);
+
+PROBLEEM 5 — Ingelogde gebruiker die /login bezoekt gaat niet naar /
+----------------------------------------------------------------------
+Oorzaak: De `guest` middleware voorkomt dit en stuurt ingelogde bezoekers
+door naar de waarde van `home` in fortify.php. Als dat niet werkt, controleer
+dan of de middleware correct is geconfigureerd in bootstrap/app.php.
+
+════════════════════════════════════════════════════════
+SAMENVATTING
+════════════════════════════════════════════════════════
+
+Voor de meeste projecten:
+  1. Open config/fortify.php
+  2. Zet 'home' => '/'
+  3. Klaar
+
+Als je advanced control nodig hebt (verschillende redirects per situatie):
+  → Maak een custom LoginResponse/RegisterResponse klasse
+  → Registreer die in de service provider
+
+Dit project gebruikt:
+  'home' => '/'   (gewijzigd — was '/dashboard')
