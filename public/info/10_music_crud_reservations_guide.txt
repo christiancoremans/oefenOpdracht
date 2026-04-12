@@ -1,0 +1,343 @@
+╔══════════════════════════════════════════════════════════════════════╗
+║         MUSICHUB — CRUD & RESERVATIONS — STEP BY STEP               ║
+╚══════════════════════════════════════════════════════════════════════╝
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  PART 1 — WORKSHOP CRUD
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+STEP 1 — Make the migration for the workshops table
+──────────────────────────────────────────────────
+File: database/migrations/2026_04_12_000003_create_music_workshops_table.php
+
+Put in:
+  $table->id();
+  $table->string('title');
+  $table->text('description');
+  $table->dateTime('start_time');
+  $table->dateTime('end_time');
+  $table->string('picture')->nullable();
+  $table->string('room');
+  $table->unsignedInteger('capacity');
+  $table->timestamps();
+
+
+STEP 2 — Make the Workshop model
+──────────────────────────────────────────────────
+File: app/Models/Music/Workshop.php
+
+Put in:
+  protected $table = 'music_workshops';
+
+  protected $fillable = [
+      'title', 'description', 'start_time', 'end_time',
+      'picture', 'room', 'capacity',
+  ];
+
+  protected $casts = [
+      'start_time' => 'datetime',
+      'end_time'   => 'datetime',
+      'capacity'   => 'integer',
+  ];
+
+  public function instructors()
+  {
+      return $this->belongsToMany(Instructor::class, 'music_instructor_workshop');
+  }
+
+  public function reservations()
+  {
+      return $this->hasMany(Reservation::class);
+  }
+
+  public function isFull(): bool
+  {
+      $count = $this->reservations_count ?? $this->reservations()->count();
+      return $count >= $this->capacity;
+  }
+
+
+STEP 3 — Make the WorkshopController
+──────────────────────────────────────────────────
+File: app/Http/Controllers/Music/WorkshopController.php
+
+Private helper (used in every return view):
+  private function projectData(): array
+  {
+      return [
+          'currentProject'     => 'music',
+          'projectName'        => config('projects.music.name'),
+          'projectDescription' => config('projects.music.description'),
+      ];
+  }
+
+index() — show all workshops:
+  $workshops = Workshop::withCount('reservations')
+      ->with('instructors')
+      ->orderBy('start_time')
+      ->get();
+  return view('projects.music.home', array_merge($this->projectData(), [
+      'workshops' => $workshops,
+  ]));
+
+show(Workshop $workshop) — show one workshop:
+  $workshop->load('instructors', 'reservations');
+  $userReservation = null;
+  $workshopFull = $workshop->reservations->count() >= $workshop->capacity;
+  if (auth()->check()) {
+      $userReservation = $workshop->reservations
+          ->where('user_id', auth()->id())->first();
+  }
+  return view('projects.music.workshops.show', array_merge($this->projectData(), [
+      'workshop'        => $workshop,
+      'userReservation' => $userReservation,
+      'workshopFull'    => $workshopFull,
+  ]));
+
+create() — show the create form:
+  return view('projects.music.workshops.create', array_merge($this->projectData(), [
+      'instructors' => Instructor::orderBy('name')->get(),
+  ]));
+
+store(Request $request) — save new workshop:
+  1. validate all fields (title, description, start_time after:now,
+     end_time after:start_time, room, capacity, picture nullable|image,
+     instructor_ids nullable|array each exists:music_instructors,id)
+  2. checkRoomConflict($room, $start, $end)
+  3. checkInstructorConflict($instructorIds, $start, $end)
+  4. if hasFile('picture'): store to 'workshops' disk 'public'
+  5. Workshop::create($validated)
+  6. $workshop->instructors()->sync($request->input('instructor_ids', []))
+  7. redirect to music.workshops.show with success
+
+edit(Workshop $workshop) — show edit form:
+  return view('...workshops.edit', array_merge($this->projectData(), [
+      'workshop'    => $workshop,
+      'instructors' => Instructor::orderBy('name')->get(),
+  ]));
+
+update(Request $request, Workshop $workshop) — save changes:
+  1. validate (same as store but start_time has no after:now)
+  2. checkRoomConflict(..., $workshop->id)     ← pass ID to exclude self
+  3. checkInstructorConflict(..., $workshop->id)
+  4. if new picture: delete old one with Storage::disk('public')->delete(...)
+     then store new one
+  5. $workshop->update($validated)
+  6. $workshop->instructors()->sync(...)
+  7. redirect to show with success
+
+destroy(Workshop $workshop) — delete workshop:
+  1. if has picture: Storage::disk('public')->delete($workshop->picture)
+  2. $workshop->delete()
+  3. redirect to music.home with success
+
+
+STEP 4 — Add the conflict check helpers (inside WorkshopController)
+──────────────────────────────────────────────────
+These are private methods that abort(422) if a conflict is found.
+
+private function checkRoomConflict(string $room, string $start, string $end, ?int $excludeId = null): void
+{
+    $query = Workshop::where('room', $room)
+        ->where(function ($q) use ($start, $end) {
+            $q->where('start_time', '<', $end)
+              ->where('end_time',   '>', $start);
+        });
+    if ($excludeId) { $query->where('id', '!=', $excludeId); }
+    if ($query->exists()) { abort(422, "Room is already booked."); }
+}
+
+private function checkInstructorConflict(array $ids, string $start, string $end, ?int $excludeId = null): void
+{
+    if (empty($ids)) return;
+    $query = Workshop::whereHas('instructors', fn($q) => $q->whereIn('music_instructors.id', $ids))
+        ->where(function ($q) use ($start, $end) {
+            $q->where('start_time', '<', $end)
+              ->where('end_time',   '>', $start);
+        });
+    if ($excludeId) { $query->where('id', '!=', $excludeId); }
+    if ($query->exists()) { abort(422, "An instructor is already booked."); }
+}
+
+
+STEP 5 — Add the routes
+──────────────────────────────────────────────────
+File: routes/music.php
+
+Public:
+  Route::get('/', [WorkshopController::class, 'index'])->name('home');
+
+Admin (middleware auth + music_role:admin) — BEFORE {workshop} wildcard!:
+  Route::get('/workshops/create',          [WorkshopController::class, 'create'])->name('workshops.create');
+  Route::post('/workshops',                [WorkshopController::class, 'store'] )->name('workshops.store');
+  Route::get('/workshops/{workshop}/edit', [WorkshopController::class, 'edit']  )->name('workshops.edit')->whereNumber('workshop');
+  Route::put('/workshops/{workshop}',      [WorkshopController::class, 'update'])->name('workshops.update')->whereNumber('workshop');
+  Route::delete('/workshops/{workshop}',   [WorkshopController::class, 'destroy'])->name('workshops.destroy')->whereNumber('workshop');
+
+Public (AFTER admin routes):
+  Route::get('/workshops/{workshop}', [WorkshopController::class, 'show'])->name('workshops.show')->whereNumber('workshop');
+
+
+STEP 6 — Make the create view
+──────────────────────────────────────────────────
+File: resources/views/projects/music/workshops/create.blade.php
+
+<x-layouts::project-shell :currentProject="$currentProject" ...>
+<form action="{{ route('music.workshops.store') }}" method="POST" enctype="multipart/form-data">
+    @csrf
+    <input  type="text"           name="title"       value="{{ old('title') }}">
+    <textarea                     name="description">{{ old('description') }}</textarea>
+    <input  type="text"           name="room"        value="{{ old('room') }}">
+    <input  type="number"         name="capacity"    value="{{ old('capacity', 20) }}">
+    <input  type="datetime-local" name="start_time"  value="{{ old('start_time') }}">
+    <input  type="datetime-local" name="end_time"    value="{{ old('end_time') }}">
+    <select name="instructor_ids[]" multiple>
+        @foreach($instructors as $instructor)
+            <option value="{{ $instructor->id }}"
+                {{ in_array($instructor->id, old('instructor_ids', [])) ? 'selected' : '' }}>
+                {{ $instructor->name }} — {{ $instructor->specialization }}
+            </option>
+        @endforeach
+    </select>
+    <input type="file" name="picture" accept="image/*">
+    <button type="submit">Create Workshop</button>
+</form>
+</x-layouts::project-shell>
+
+! enctype="multipart/form-data" is required for file upload or picture never arrives.
+
+
+STEP 7 — Make the edit view
+──────────────────────────────────────────────────
+File: resources/views/projects/music/workshops/edit.blade.php
+
+Same as create but add:
+  @method('PUT')
+  action="{{ route('music.workshops.update', $workshop) }}"
+
+Pre-fill values like:
+  value="{{ old('title', $workshop->title) }}"
+  value="{{ old('start_time', $workshop->start_time->format('Y-m-d\TH:i')) }}"
+
+Pre-select instructors:
+  @php $selectedIds = old('instructor_ids', $workshop->instructors->pluck('id')->toArray()); @endphp
+  {{ in_array($instructor->id, $selectedIds) ? 'selected' : '' }}
+
+Show current picture if it exists:
+  @if($workshop->picture)
+      <img src="{{ Storage::url($workshop->picture) }}">
+  @endif
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  PART 2 — RESERVATIONS (reserve + cancel)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+STEP 1 — Make the migration for the reservations table
+──────────────────────────────────────────────────
+File: database/migrations/2026_04_12_000005_create_music_reservations_table.php
+
+Put in:
+  $table->id();
+  $table->foreignId('user_id')->constrained('users')->cascadeOnDelete();
+  $table->foreignId('workshop_id')->constrained('music_workshops')->cascadeOnDelete();
+  $table->string('full_name');
+  $table->string('email');
+  $table->string('phone')->nullable();
+  $table->text('music_experience')->nullable();
+  $table->timestamps();
+  $table->unique(['user_id', 'workshop_id']);   ← one reservation per user per workshop
+
+
+STEP 2 — Make the Reservation model
+──────────────────────────────────────────────────
+File: app/Models/Music/Reservation.php
+
+Put in:
+  protected $table = 'music_reservations';
+
+  protected $fillable = [
+      'user_id', 'workshop_id', 'full_name', 'email', 'phone', 'music_experience',
+  ];
+
+  public function user()    { return $this->belongsTo(User::class); }
+  public function workshop() { return $this->belongsTo(Workshop::class); }
+
+
+STEP 3 — Make the ReservationController
+──────────────────────────────────────────────────
+File: app/Http/Controllers/Music/ReservationController.php
+
+store(Request $request) — create a reservation:
+  1. validate: workshop_id required|exists:music_workshops,id
+  2. $workshop = Workshop::withCount('reservations')->findOrFail($request->workshop_id)
+  3. if $workshop->reservations_count >= $workshop->capacity → redirect back with error "fully booked"
+  4. if Reservation::where('user_id', auth()->id())->where('workshop_id', $workshop->id)->exists()
+     → redirect back with error "already reserved"
+  5. Reservation::create([
+         'user_id'          => auth()->id(),
+         'workshop_id'      => $workshop->id,
+         'full_name'        => auth()->user()->name,
+         'email'            => auth()->user()->email,
+         'phone'            => auth()->user()->music_phone,
+         'music_experience' => auth()->user()->music_experience,
+     ])
+  6. redirect to music.workshops.show with success
+
+destroy(Reservation $reservation) — cancel a reservation:
+  1. if $reservation->user_id !== auth()->id() → abort(403)
+  2. $workshop = $reservation->workshop
+  3. $reservation->delete()
+  4. redirect to music.workshops.show with success "spot is available again"
+
+
+STEP 4 — Add the reservation routes
+──────────────────────────────────────────────────
+File: routes/music.php  (inside middleware('auth') group)
+
+  Route::post('/reservations',                  [ReservationController::class, 'store']  )->name('reservations.store');
+  Route::delete('/reservations/{reservation}',  [ReservationController::class, 'destroy'])->name('reservations.destroy')->whereNumber('reservation');
+
+
+STEP 5 — Add reserve/cancel buttons to the show view
+──────────────────────────────────────────────────
+File: resources/views/projects/music/workshops/show.blade.php
+
+Inside @auth:
+
+  @if($userReservation)
+      {{-- Already reserved: show cancel button --}}
+      <form action="{{ route('music.reservations.destroy', $userReservation) }}" method="POST"
+            onsubmit="return confirm('Cancel your reservation?')">
+          @csrf
+          @method('DELETE')
+          <button type="submit">Cancel Spot</button>
+      </form>
+
+  @elseif($workshopFull)
+      <p>This workshop is fully booked.</p>
+
+  @elseif(!auth()->user()->isMusicAdmin())
+      {{-- Not yet reserved: show reserve button --}}
+      <form action="{{ route('music.reservations.store') }}" method="POST">
+          @csrf
+          <input type="hidden" name="workshop_id" value="{{ $workshop->id }}">
+          <button type="submit">Reserve My Spot</button>
+      </form>
+
+  @else
+      <p>Admins manage workshops, not reserve spots.</p>
+  @endif
+
+@else
+  <a href="{{ route('login') }}">Log in</a> to reserve.
+@endauth
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  QUICK REFERENCE — ACCOUNTS TO TEST WITH
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  musicadmin@test.com / password   → can create, edit, delete workshops
+  musicuser1@test.com / password   → can reserve and cancel
+  musicuser2@test.com / password   → can reserve and cancel
