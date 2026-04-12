@@ -31,7 +31,7 @@ use Laravel\Fortify\TwoFactorAuthenticatable;
 |--------------------------------------------------------------------------
 */
 
-#[Fillable(['name', 'email', 'password', 'role', 'devtalk_role', 'ee_role', 'ds_role'])]
+#[Fillable(['name', 'email', 'password', 'role', 'devtalk_role', 'ee_role', 'ds_role', 'music_role', 'music_phone', 'music_experience'])]
 #[Hidden(['password', 'two_factor_secret', 'two_factor_recovery_codes', 'remember_token'])]
 class User extends Authenticatable
 {
@@ -113,4 +113,13 @@ class User extends Authenticatable
     public function studentLessons(): HasMany     { return $this->hasMany(DriveSmart\Lesson::class, 'student_id');    }
     public function progressReports(): HasMany   { return $this->hasMany(DriveSmart\ProgressReport::class, 'student_id');    }
     public function writtenReports(): HasMany    { return $this->hasMany(DriveSmart\ProgressReport::class, 'instructor_id'); }
+
+    // ── MusicHub role helpers ────────────────────────────────────────────────
+    // EXAM NOTE: music_role is independent from all other role columns.
+    // A music admin has NO extra privileges in TechBazaar or DriveSmart.
+    public function isMusicAdmin(): bool { return $this->music_role === 'admin'; }
+    public function isMusicUser(): bool  { return $this->music_role === 'user';  }
+
+    // ── MusicHub relationships ───────────────────────────────────────────────
+    public function musicReservations(): HasMany { return $this->hasMany(Music\Reservation::class); }
 }

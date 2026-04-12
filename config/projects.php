@@ -49,6 +49,12 @@ return [
         'color'       => 'violet',
     ],
 
+    'music' => [
+        'name'        => 'MusicHub',
+        'description' => 'Workshopbeheer: plan muziekworkshops, koppel instructeurs en laat gebruikers reserveren',
+        'color'       => 'purple',
+    ],
+
     'techbazaar' => [
         'name'        => 'TechBazaar',
         'description' => 'Webshop: sellers list tech products, buyers order & review them',

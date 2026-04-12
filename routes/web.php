@@ -40,6 +40,9 @@ require __DIR__.'/eventease.php';
 // ── DriveSmart practice project ───────────────────────────────────────────
 require __DIR__.'/drivesmart.php';
 
+// ── MusicHub practice project ─────────────────────────────────────────────
+require __DIR__.'/music.php';
+
 // ── Practice projects ─────────────────────────────────────────────────────
 //
 // These routes use {project} as a dynamic URL segment.

@@ -382,6 +382,39 @@
     </header>
     @endif
 
+    @if($currentProject === 'music')
+    <header class="bg-purple-600 text-white shadow-sm">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex items-center h-11 gap-1">
+
+            <a href="{{ route('music.home') }}"
+               class="px-3 py-1 text-sm rounded-md font-medium whitespace-nowrap transition-colors
+                      {{ request()->routeIs('music.home')
+                           ? 'bg-purple-800 text-white'
+                           : 'hover:bg-purple-700' }}">
+                🎵 Workshops
+            </a>
+
+            @auth
+                <a href="{{ route('music.dashboard') }}"
+                   class="px-3 py-1 text-sm rounded-md font-medium whitespace-nowrap transition-colors
+                          {{ request()->routeIs('music.dashboard')
+                               ? 'bg-purple-800 text-white'
+                               : 'hover:bg-purple-700' }}">
+                    📋 Dashboard
+                </a>
+
+                @if(auth()->user()->isMusicAdmin())
+                    <a href="{{ route('music.workshops.create') }}"
+                       class="px-3 py-1 text-sm rounded-md font-medium whitespace-nowrap transition-colors hover:bg-purple-700">
+                        ➕ New Workshop
+                    </a>
+                    <span class="ml-2 text-xs bg-purple-800 px-2 py-0.5 rounded-full">Admin</span>
+                @endif
+            @endauth
+        </div>
+    </header>
+    @endif
+
     {{-- =================================================================
          MAIN CONTENT
          Each project's page content goes here via {{ $slot }}

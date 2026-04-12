@@ -28,6 +28,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'devtalk_role' => \App\Http\Middleware\EnsureDevTalkRole::class,
             'ee_role'      => \App\Http\Middleware\EnsureEventEaseRole::class,
             'ds_role'      => \App\Http\Middleware\EnsureDriveSmartRole::class,
+            'music_role'   => \App\Http\Middleware\EnsureMusicRole::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

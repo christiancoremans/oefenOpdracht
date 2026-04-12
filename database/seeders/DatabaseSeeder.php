@@ -11,6 +11,9 @@ use App\Models\DevTalk\Vote;
 use App\Models\EventEase\Event as EeEvent;
 use App\Models\DriveSmart\Lesson as DsLesson;
 use App\Models\DriveSmart\ProgressReport as DsReport;
+use App\Models\Music\Instructor as MusicInstructor;
+use App\Models\Music\Reservation as MusicReservation;
+use App\Models\Music\Workshop as MusicWorkshop;
 use App\Models\EventEase\Reservation as EeReservation;
 use App\Models\Order;
 use App\Models\OrderItem;
@@ -501,6 +504,118 @@ class DatabaseSeeder extends Seeder
             'lessons_completed' => 2,
             'skill_level'       => DsReport::SKILL_BEGINNER,
             'notes'             => 'Early stage. Focusing on basic vehicle control and road awareness.',
+        ]);
+
+        // ══════════════════════════════════════════════════════════════════
+        // ── MusicHub seeder data ──────────────────────────────────────────
+        // EXAM NOTE: MusicHub uses a separate music_role column, a
+        // separate music_instructors table, and the snapshot pattern on
+        // reservations (user data is copied at booking time).
+        // ══════════════════════════════════════════════════════════════════
+
+        // ── MusicHub users ─────────────────────────────────────────────────
+        $musicAdmin = User::create([
+            'name'             => 'Music Admin',
+            'email'            => 'musicadmin@test.com',
+            'password'         => Hash::make('password'),
+            'role'             => 'buyer',
+            'music_role'       => 'admin',
+        ]);
+
+        $musicUser1 = User::create([
+            'name'             => 'Music User One',
+            'email'            => 'musicuser1@test.com',
+            'password'         => Hash::make('password'),
+            'role'             => 'buyer',
+            'music_role'       => 'user',
+            'music_phone'      => '+32 491 111 111',
+            'music_experience' => '3 years of classical piano.',
+        ]);
+
+        $musicUser2 = User::create([
+            'name'             => 'Music User Two',
+            'email'            => 'musicuser2@test.com',
+            'password'         => Hash::make('password'),
+            'role'             => 'buyer',
+            'music_role'       => 'user',
+            'music_phone'      => '+32 492 222 222',
+            'music_experience' => 'Beginner, interested in DJ techniques.',
+        ]);
+
+        // ── Music instructors (standalone model — NOT platform users) ──────
+        // EXAM NOTE: Instructors are their own table (music_instructors).
+        // They are managed by admin and linked to workshops via the pivot table.
+        $instrSarah = MusicInstructor::create(['name' => 'Sarah De Vos', 'specialization' => 'Classical Piano']);
+        $instrMarco = MusicInstructor::create(['name' => 'Marco Rossi',  'specialization' => 'DJ Techniques']);
+        $instrAn    = MusicInstructor::create(['name' => 'An Claeys',    'specialization' => 'Vocal Training']);
+        $instrDavid = MusicInstructor::create(['name' => 'David Kim',    'specialization' => 'Music Theory']);
+        $instrLisa  = MusicInstructor::create(['name' => 'Lisa Janssen', 'specialization' => 'Guitar']);
+
+        // ── Music workshops ────────────────────────────────────────────────
+        $ws1 = MusicWorkshop::create([
+            'title'       => 'Introduction to DJ Techniques',
+            'description' => 'Learn the basics of beatmatching, EQ, and live mixing. Suitable for complete beginners. Bring comfortable headphones!',
+            'start_time'  => now()->addDays(14)->setTime(10, 0),
+            'end_time'    => now()->addDays(14)->setTime(13, 0),
+            'room'        => 'Studio A',
+            'capacity'    => 15,
+        ]);
+
+        $ws2 = MusicWorkshop::create([
+            'title'       => 'Classical Piano for Beginners',
+            'description' => 'An introduction to piano notation, posture, and basic scales. Sheet music provided. No prior experience needed.',
+            'start_time'  => now()->addDays(21)->setTime(14, 0),
+            'end_time'    => now()->addDays(21)->setTime(17, 0),
+            'room'        => 'Practice Room 2',
+            'capacity'    => 8,
+        ]);
+
+        $ws3 = MusicWorkshop::create([
+            'title'       => 'Vocal Training & Microphone Technique',
+            'description' => 'Breath control, vocal warm-ups, and how to use a microphone effectively in a studio environment.',
+            'start_time'  => now()->addDays(28)->setTime(11, 0),
+            'end_time'    => now()->addDays(28)->setTime(14, 0),
+            'room'        => 'Recording Studio',
+            'capacity'    => 10,
+        ]);
+
+        // ── Attach instructors to workshops (many-to-many) ─────────────────
+        // EXAM NOTE: ->sync() replaces ALL pivot rows for this workshop with
+        // exactly the given IDs. It adds missing rows and removes extras (atomic).
+        // Use ->attach() if you only want to ADD without removing.
+        $ws1->instructors()->sync([$instrMarco->id, $instrDavid->id]);
+        $ws2->instructors()->sync([$instrSarah->id, $instrDavid->id]);
+        $ws3->instructors()->sync([$instrAn->id]);
+
+        // ── Music reservations (snapshot pattern) ──────────────────────────
+        // EXAM NOTE: User data is COPIED into the reservation at booking time.
+        // Even if the user changes their profile later, the reservation keeps
+        // the original data. This is called the SNAPSHOT pattern.
+        MusicReservation::create([
+            'user_id'          => $musicUser1->id,
+            'workshop_id'      => $ws1->id,
+            'full_name'        => $musicUser1->name,
+            'email'            => $musicUser1->email,
+            'phone'            => $musicUser1->music_phone,
+            'music_experience' => $musicUser1->music_experience,
+        ]);
+
+        MusicReservation::create([
+            'user_id'          => $musicUser2->id,
+            'workshop_id'      => $ws1->id,
+            'full_name'        => $musicUser2->name,
+            'email'            => $musicUser2->email,
+            'phone'            => $musicUser2->music_phone,
+            'music_experience' => $musicUser2->music_experience,
+        ]);
+
+        MusicReservation::create([
+            'user_id'          => $musicUser1->id,
+            'workshop_id'      => $ws2->id,
+            'full_name'        => $musicUser1->name,
+            'email'            => $musicUser1->email,
+            'phone'            => $musicUser1->music_phone,
+            'music_experience' => $musicUser1->music_experience,
         ]);
     }
 }
